@@ -1027,6 +1027,25 @@ export function LobbyScreen() {
   const [modalOpen, setModalOpen] = useState(() => new URLSearchParams(location.search).has('modal'));
   const lobbyStats = useStore((s) => s.lobbyStats, shallowEqual);
   const [onlineCount, setOnlineCount] = useState(() => lobbyStats?.online ?? 1);
+  // [local-patch 2026-10-19] 真实在线人数：本 fork 未接线 lobbyStats 数据源，这里轮询 /healthz 兜底
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const r = await fetch('/healthz', { cache: 'no-store' });
+        if (!alive || !r.ok) return;
+        const d = await r.json();
+        if (typeof d.sessions === 'number') {
+          setOnlineCount(d.sessions);
+          // Preact 渲染层不刷新该状态（0.19.1 hub 疑似缺陷），直接写 DOM 兜底
+          for (const el of document.querySelectorAll('.hub-online .num')) el.textContent = String(d.sessions);
+        }
+      } catch { /* 不可达时保持现值 */ }
+    };
+    tick();
+    const iv = setInterval(tick, 15000);
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
   const [rooms, setRooms] = useState(() => (federationEnabled ? [] : lobbyStats?.rooms ?? []));
   const bg = useHubBackdrop();
   const [bgOpen, setBgOpen] = useState(false);
