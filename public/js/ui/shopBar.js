@@ -35,6 +35,8 @@ import { itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, modu
 import { portraitUrlOf, currentAppearanceLookup } from './portraitChain.js';
 import { data } from '../data.js';
 import { hotkeyLabelOf } from './settings.js';
+// [local-patch 2026-10-20] 卡池余量面板（g.pool → m.pool，本文件底部的 卡池 按钮打开）
+import { PoolPanel } from './poolPanel.js';
 // 组件级改写（DESIGN §28.19）：`game.shopCard` 是引擎的具名组件之一（每一张干员卡：商店、晋升奖励、定向投放），
 // 包声明的 wraps 就长在它上面。
 import { modComponent } from './modComponents.js';
@@ -330,6 +332,8 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
     else slots.forEach((s, i) => { if (s && !s.sold) keys.add(armKey(s.kind === 'item' ? 'i' : 'c', i, s)); });
   }
   const [armed, setArmed] = useTwoTap({ editable, keys });
+  // [local-patch 2026-10-20] 卡池余量面板（hook 在 collapsed 早退之前，保住顺序）
+  const [showPool, setShowPool] = useState(false);
   // the armed card's slot (game.js lights the tile a merge's elite will take — gameLogic.mergeTarget); kept before the
   // collapsed tab's early return (hook order)
   const armedSlot = armedSlotOf(armed, slots, showReward ? reward.slots : null);
@@ -362,6 +366,9 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
   return html`<section class=${cx('shopbar', frozen && 'is-frozen', !editable && 'is-locked', showReward && 'has-reward', armed && 'has-armed')} ref=${barRef} aria-label=${t('调度中心')}>
     <div class="shopbar__tools">
       <span class="shopbar__remain">${t('剩余可放置角色：')}<b class=${cx('num', remaining === 0 && 't-orange')}>${remaining}</b></span>
+      <button type="button" class="toolbtn" onClick=${() => setShowPool((v) => !v)} title=${t('卡池余量（每个干员的剩余张数）')}>
+        <${Icon} name="chart" /><span>${t('卡池')}</span>
+      </button>
       <button type="button" class=${cx('toolbtn', 'toolbtn--ice', frozen && 'is-on')} disabled=${!!frzReason} onClick=${onFreeze}
         title=${frzReason || (frozen ? t('解冻商店 · {key}', { key: hk.freeze }) : t('冻结商店（下回合保留） · {key}', { key: hk.freeze }))}>
         <${Img} src=${uiUrl(data.get('assets'), frozen ? 'shopPanel/frozen_icon2' : 'shopPanel/frozen_icon')} class="toolbtn__img" fallback=${html`<${Icon} name="snow" />`} />
@@ -406,5 +413,6 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
         <button type="button" class="funds__collapse" onClick=${() => onCollapse(true)}><${Icon} name="close" />${t('收起')}</button>
       </div>
     </div>
+    ${showPool ? html`<${PoolPanel} onClose=${() => setShowPool(false)} />` : null}
   </section>`;
 }

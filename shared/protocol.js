@@ -896,6 +896,8 @@ export const C2S = {
   // the stats the own board's units start their next battle with (user playtest #4 item 7; prep phases): answered by
   // the push m.unitStats { seq, round, units: [unitStatsEntry] }; `seq` is echoed so the client keeps the newest answer
   'g.unitStats': { seq: (v) => isInt(v, 0, 2 ** 31), $optional: ['seq'] },
+  // [local-patch 2026-10-20] the shared chess pool's live occupancy: answered by the push m.pool { round, pool }
+  'g.pool': {},
   // incremental m.public (DESIGN §8.2 "incremental frame"): the client could not merge a delta — it holds no
   // materialized state, or a patch named a seat it does not know — and asks for the full frame again. The answer is a
   // unicast full m.public; a spectator seat may ask too (watching includes resyncing what it watches)
@@ -973,6 +975,9 @@ export const S2C = [
   'm.layer',
   // m.unitStats { seq, round, units: [unitStatsEntry] } — the answer to g.unitStats (the requester only)
   'm.unitStats',
+  // [local-patch 2026-10-20] m.pool { round, pool: { [baseId]: { cap, left, support? } } } — the answer to g.pool
+  // (the requester only): the shared chess pool's cap / remaining copies, one snapshot per ask
+  'm.pool',
   // client-side combat (DESIGN §14): b.start { battleId, fieldId, kind, spec, authoritative, startAt, serverNow, elapsed,
   // speed, watch? } · b.pool { hp, max, teamLp, acked: { [fieldId]: cumulative boss damage counted } } ·
   // b.end { battleId, fieldId, reason }

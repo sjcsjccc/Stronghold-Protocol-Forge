@@ -54,6 +54,8 @@ export class MatchIntents {
       case 'g.pause': return this.setPause(ps, !!msg.on);
       // the stats the board's units start their next battle with (the detail card in prep, user playtest #4 item 7)
       case 'g.unitStats': return this.unitStats(ps, msg.seq ?? null);
+      // [local-patch 2026-10-20] the shared chess pool's remaining counts (the client's pool panel)
+      case 'g.pool': return this.poolView(ps);
       case 'g.leave': this.onLeave(ps.playerId); return OK;
       // the client could not merge an incremental m.public frame and asks for the full one again
       // (DESIGN §8.2 "incremental frame", the self-healing ask; shared/protocol.js 'g.publicFull')
@@ -114,6 +116,23 @@ export class MatchIntents {
     if (this.phase !== PHASE.ROUND_START && this.phase !== PHASE.SP_DRAFT && this.phase !== PHASE.PREP) return fail(ERR.WRONG_PHASE);
     const units = this._unitStatsOf(ps);
     this.sendTo(ps.playerId, { t: 'm.unitStats', seq: Number.isInteger(seq) ? seq : null, round: this.round, units });
+    return OK;
+  }
+
+  /**
+   * [local-patch 2026-10-20] g.pool {} — the shared chess pool's live occupancy, pushed to the requester as
+   * `m.pool { round, pool }` with `pool = { [baseId]: { cap, left, support? } }` (a snapshot of SharedPool.entries:
+   * every eligible visible chess of this match; a piece brought as 助战 carries `support`). Read-only and
+   * phase-independent — safe to ask at any point of the match; the client's pool panel refreshes on demand.
+   * @param {PlayerState} ps
+   */
+  poolView(ps) {
+    const pool = {};
+    for (const [baseId, e] of this.pool.entries) {
+      if (!e || !(e.cap > 0)) continue;
+      pool[baseId] = { cap: e.cap, left: Math.max(0, e.left), ...(e.support ? { support: true } : {}) };
+    }
+    this.sendTo(ps.playerId, { t: 'm.pool', round: this.round, pool });
     return OK;
   }
 
