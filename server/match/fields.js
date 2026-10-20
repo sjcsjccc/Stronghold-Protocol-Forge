@@ -256,7 +256,7 @@ export const BOSS_SILENCE_MS = 12_000;
 export const TIMELINE_EVERY = 1;
 
 /** Wall-clock budget of one headless slice under a real scheduler (ms): the host's event loop stays responsive. */
-export const HEADLESS_SLICE_MS = 8;
+export const HEADLESS_SLICE_MS = 40; // [local-patch 2026-10-19] 8→40：8核16G 上加大 AI 战场切片预算，AI 等待缩短约 5 倍
 /** Extra ticks per pacing interval while a server-paced boss field catches up to its clock (takeover). */
 export const CATCHUP_TICKS_PER_INTERVAL = 240;
 const perfNow = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
