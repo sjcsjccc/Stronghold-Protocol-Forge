@@ -870,6 +870,30 @@ export class Lobby {  /**
    * @param {{ matches?: number, humans?: number, bots?: number, spectators?: number }} [out]
    * @returns {{ publicRooms: number, total: number }}
    */
+  /** [local-patch 2026-10-20] 完整版战局一览：全部在册房间（含进行中对局），供大厅「模拟邀约」浏览与观战。 */
+  listRooms(session, msg) {
+    const reply = (body) => sendSession(session, { t: 'room.list', rid: msg && msg.rid, ...body });
+    try {
+      const rooms = [];
+      for (const r of this.rooms.values()) {
+        const seats = (r.seats ?? []).filter(s => s && !s.left);
+        rooms.push({
+          code: r.code,
+          difficulty: r.difficulty,
+          humans: seats.filter(s => !s.isBot).length,
+          maxSeats: r.seatCap ?? seats.length,
+          inMatch: !!r.match,
+          ...(r.match && Number.isFinite(r.match.round) ? { round: r.match.round } : {}),
+        });
+      }
+      const s = this.stats();
+      reply({ ok: true, online: s.humans, roomsCount: s.rooms, matchesCount: s.matches, rooms });
+    } catch (e) {
+      reply({ ok: false, error: 'LISTROOMS_THROW', detail: String(e && e.stack || e).slice(0, 300) });
+    }
+    return OK;
+  }
+
   roomCounts(out = {}) {
     let matches = 0;
     let humans = 0;
@@ -1059,6 +1083,7 @@ export class Lobby {  /**
       // 外观选择（皮肤层）：别人看到的你长什么样 —— 纯展示，比赛中也接受，变更即广播
       case 'room.appearance': return this.appearance(session, msg);
       case 'room.skins': return this.skins(session, msg);
+      case 'room.list': return this.listRooms(session, msg);
       case 'room.spectate': return this.spectate(session, msg);
       case 'room.removeSpectator': return this.removeSpectator(session, msg);
       // 野排匹配 (quick match): the queue lives in server/matchmaking.js; these two cases are its only entry points
