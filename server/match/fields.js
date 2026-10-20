@@ -257,6 +257,11 @@ export const TIMELINE_EVERY = 1;
 
 /** Wall-clock budget of one headless slice under a real scheduler (ms): the host's event loop stays responsive. */
 export const HEADLESS_SLICE_MS = 40; // [local-patch 2026-10-19] 8→40：8核16G 上加大 AI 战场切片预算，AI 等待缩短约 5 倍
+
+// [local-patch 2026-10-21] AI 战斗节奏的**附加**倍率（默认 1 = 关）：在房主对局倍速（g.matchSpeed，
+// 全房统一）之上再压缩服务端代跑场（AI 队友/托管/接管场）的释放与进度。普通用户不需要开——房主
+// 倍速已经统一真人与 AI 的节奏；这是给「想让 AI 比真人更快」的部署留的后门，SP_AI_FIELD_SPEED 可调。
+export const AI_FIELD_SPEED = Math.max(1, Number(process.env.SP_AI_FIELD_SPEED) > 0 ? Number(process.env.SP_AI_FIELD_SPEED) : 1);
 /** Extra ticks per pacing interval while a server-paced boss field catches up to its clock (takeover). */
 export const CATCHUP_TICKS_PER_INTERVAL = 240;
 const perfNow = () => (globalThis.performance ? globalThis.performance.now() : Date.now());

@@ -241,6 +241,10 @@ function MatchScreen() {
   // 战斗倍速（顶栏那个 ×1/×2/×3/×4）：**纯本地播放选择** —— 同一段确定的 tick 序列只是推进得更快，
   // 所以战果一字不变（runner.setRate 的注释 + test/match/runner.test.js 用 b.result 逐字节相同钉住）。
   const [playRate, setPlayRate] = useState(1);
+  // [local-patch 2026-10-21] 房主对局倍速：房主的倍速按钮改为设置**全房统一节奏**（g.matchSpeed，服务端
+  // 裁决仅房主生效，乐观更新失败回退）——真人与 AI 的战斗按同一速度推进；非房主的按钮仍是个人本地回放
+  // 倍速（只影响自己看得多快，战果无关）。
+  const [matchRate, setMatchRate] = useState(1);
   const [drag, setDrag] = useState(null);                // { uid, kind, id } while dragging a piece
   const [facing, setFacing] = useState(null);            // direction step: { uid, piece, row, col, grid, name }
   const [sel, setSel] = useState(null);                  // tapped own piece: { uid }
@@ -1693,7 +1697,13 @@ function MatchScreen() {
         pen=${pen} penAvail=${penAvail} onPen=${togglePen} config=${gd.config} frozenAt=${frozenAt}
         pause=${canPause || paused ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null}
         live=${liveLpNow} spectator=${spectator}
-        speed=${playRate} onSpeed=${battleRunner ? (n) => setPlayRate(battleRunner.setRate(n)) : null}
+        speed=${specFacts.isHost ? matchRate : playRate}
+        onSpeed=${battleRunner ? (n) => {
+          if (specFacts.isHost) {
+            setMatchRate(n);
+            net.request('g.matchSpeed', { rate: n }).catch(() => setMatchRate(1));
+          } else setPlayRate(battleRunner.setRate(n));
+        } : null}
         spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom} />
 
       <div class="gm__bonds">

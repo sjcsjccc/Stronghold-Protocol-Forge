@@ -6,7 +6,7 @@
 
 import { requiresTraitLayerAuthority } from '../operatorTraits.js';
 import { PHASE } from '../../../shared/constants.js';
-import { DeadBattle, syntheticResult, RESULT_GRACE_MS, HARD_CAP_SECONDS, HeadlessJob } from '../fields.js';
+import { DeadBattle, syntheticResult, RESULT_GRACE_MS, HARD_CAP_SECONDS, HeadlessJob, AI_FIELD_SPEED } from '../fields.js';
 import { buildBattleSpec, createBattleFromSpec } from '../../sim/spec.js';
 import { specBattleOpts } from './battleOpts.js';
 import { testSlice } from '../testTrace.js';
@@ -163,6 +163,18 @@ export class MatchClientCombat {
   }
 
   /**
+   * [local-patch 2026-10-21] 房主改对局倍速（g.matchSpeed）后按新 gameSpeed 重排计时：只重排**服务端代跑场**
+   * 的战果释放（AI/托管场的等待立即按新节奏伸缩）；真人正在打的一场照旧按开打时的节奏打完（本地回放不被
+   * 拦腰改速），其截止计时也在下一场才用新速度重排。
+   */
+  rearmFieldTimers() {
+    for (const f of this.fields) {
+      if (!f || f.done || f.mode !== 'server' || f.result == null) continue;
+      this._armRelease(f);
+    }
+  }
+
+  /**
    * The server simulates a field: normal / 联防 headlessly at once (the result is released at the battle's natural end
    * on the field's clock, so the teammates' progress UI and the round pacing stay as if it ran live); boss fields in
    * real time on the pacer (they share the pool), fast-forwarded to the field's clock on a takeover.
@@ -193,6 +205,14 @@ export class MatchClientCombat {
       f.resultSource = 'server';
       f.timeline = run.timeline;
       f.endGt = Number(run.battle.time) || 0;
+      // [local-patch 2026-10-21] AI 战斗节奏（fields.js AI_FIELD_SPEED）：进度时间轴与释放时刻按同倍率压缩——
+      // _fieldElapsed 用真实经过时间查时间轴、_armRelease 按 endGt 定释放，两处一起除才有「进度条 K× 推进、
+      // 战果 K× 释放」的一致观感；只压发布节奏，战果本身（tick 序列/结算）一字不动。
+      if (AI_FIELD_SPEED > 1) {
+        const k = AI_FIELD_SPEED;
+        if (Array.isArray(f.timeline)) f.timeline = f.timeline.map((row) => [row[0] / k, ...row.slice(1)]);
+        f.endGt = f.endGt / k;
+      }
       this._armRelease(f);
     };
     const sliceCtl = testSlice(this);

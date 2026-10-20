@@ -438,7 +438,12 @@ export class Match {
     /** @type {Array<{ id: string, pack: string, hash?: string, url: string }>} */
     this.workshopBattleModules = Array.isArray(opts.workshopBattleModules) ? opts.workshopBattleModules : [];
     this.timerScale = Number.isFinite(opts.timerScale) && opts.timerScale >= 0 ? opts.timerScale : 1;
-    this.gameSpeed = Number.isFinite(opts.combatSpeed) && opts.combatSpeed > 0 ? Math.min(opts.combatSpeed, 200) : GAME_SPEED;
+    // [local-patch 2026-10-21] 房主对局倍速（g.matchSpeed，仅房主、1–4）：全房真人与 AI 的战斗统一按
+    // `gameSpeed = 基速 × matchRate` 推进——b.start 的 speed、真人场的截止、AI/托管场的释放、BOSS pacer
+    // 全部从这一个值派生，改它即全房一致加速；节奏只改「墙钟→tick」映射，战果一字不变。
+    this.matchRate = 1;
+    this._combatSpeedBase = Number.isFinite(opts.combatSpeed) && opts.combatSpeed > 0 ? Math.min(opts.combatSpeed, 200) : GAME_SPEED;
+    this.gameSpeed = this._combatSpeedBase * this.matchRate;
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;
     /** wall-clock budget of one rehearsal slice (scheduleBotPrep) */

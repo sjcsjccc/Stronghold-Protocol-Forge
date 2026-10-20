@@ -56,6 +56,8 @@ export class MatchIntents {
       case 'g.unitStats': return this.unitStats(ps, msg.seq ?? null);
       // [local-patch 2026-10-20] the shared chess pool's remaining counts (the client's pool panel)
       case 'g.pool': return this.poolView(ps);
+      // [local-patch 2026-10-21] 房主对局倍速：全房真人与 AI 统一节奏（仅房主）
+      case 'g.matchSpeed': return this.setMatchSpeed(ps, msg.rate);
       case 'g.leave': this.onLeave(ps.playerId); return OK;
       // the client could not merge an incremental m.public frame and asks for the full one again
       // (DESIGN §8.2 "incremental frame", the self-healing ask; shared/protocol.js 'g.publicFull')
@@ -133,6 +135,25 @@ export class MatchIntents {
       pool[baseId] = { cap: e.cap, left: Math.max(0, e.left), ...(e.support ? { support: true } : {}) };
     }
     this.sendTo(ps.playerId, { t: 'm.pool', round: this.round, pool });
+    return OK;
+  }
+
+  /**
+   * [local-patch 2026-10-21] g.matchSpeed { rate 1–4 } — 房主对局倍速：把 `gameSpeed` 设为 基速(官方 2×) × rate，
+   * 全房统一加速——真人场的截止/回放基速、AI/托管场的战果释放、BOSS pacer 全部从这一个值派生。节奏只改
+   * 「墙钟→tick」映射，tick 序列与战果一字不变。已在飞的计时器由 clientCombat.rearmFieldTimers 按新速度重排
+   * （只重排服务端代跑场的释放；真人当前一场照旧打完，下一场起用新速度）。仅房主；对局结束/重开归 1。
+   * @param {PlayerState} ps @param {number} rate
+   */
+  setMatchSpeed(ps, rate) {
+    if (this.ended || this.disposed) return fail(ERR.WRONG_PHASE);
+    if (!this.hostId || ps.playerId !== this.hostId) return fail(ERR.NOT_HOST);
+    if (!Number.isInteger(rate) || rate < 1 || rate > 4) return fail(ERR.BAD_MSG);
+    if (rate === this.matchRate) return OK;
+    this.matchRate = rate;
+    this.gameSpeed = this._combatSpeedBase * rate;
+    this.rearmFieldTimers?.();
+    this.log.info?.(`[match ${this.roomCode}] R${this.round}: host ${ps.playerId} set match speed ×${rate} (gameSpeed ${this.gameSpeed})`);
     return OK;
   }
 

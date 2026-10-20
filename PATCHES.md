@@ -14,11 +14,13 @@
 | 4 | 整备期免倒计时 | `server/match/match/prep.js` | `isSolo`→`soloUntimed` | 1 真人 + N AI 房整备不限时 |
 | 5 | 卡池乘数缩放 | `server/match/Match.js` `server/match/gamedata.js` | 乘数 `max(2, ceil(开局人数/2))` | 超编房不再 20 人抢 4 人份牌 |
 | 6 | 卡池余量面板 | `server/match/match/intents.js` `shared/protocol.js` `public/js/ui/shopBar.js` `public/js/ui/poolPanel.js`(新) | +`g.pool`/`m.pool` +面板 UI | 整备期查看每个干员剩余张数 |
+| 7 | 房主对局倍速 | `server/match/Match.js` `server/match/match/intents.js` `server/match/match/clientCombat.js` `server/match/fields.js` `shared/protocol.js` `public/js/screens/game.js` | +`g.matchSpeed`（仅房主，×1–×4） | 全房真人与 AI 统一战斗节奏 |
 
-所有代码内改动都带 `[local-patch 2026-10-19|20]` 注释标记，可全文搜索定位。
+所有代码内改动都带 `[local-patch 2026-10-19|20|21]` 注释标记，可全文搜索定位。
 
 ## 关键机制笔记（改前必读）
 
+- **倍速语义**（补丁 7）：官方基速 `GAME_SPEED=2` × 房主 `matchRate(1–4)` = `gameSpeed`，b.start 的 speed、真人场截止、AI/托管场释放、BOSS pacer 全从这一个值派生——改它即全房一致加速，tick 序列与战果不变。房主的顶栏倍速按钮 = 设对局倍速（服务端裁决、乐观更新）；非房主的按钮仍是个人本地回放倍速。改速后 `rearmFieldTimers` 只重排服务端代跑场的释放，真人正在打的一场照旧打完。`AI_FIELD_SPEED`（fields.js，默认 1，`SP_AI_FIELD_SPEED` 可调）是「AI 比真人更快」的附加后门，与房主倍速相乘。
 - **lobby 消息分发**：handler 必须自己 `sendSession(session, {...})` 发回执（**必须带请求 rid**）并 `return OK`；直接 return 载荷会被无声丢弃。
 - **游戏内弹窗三件套**：Modal 遮罩/盒子默认 `pointer-events: none`（不挡战场操作）⇒ ① 内容根节点显式 `pointerEvents:'auto'`，否则整个面板「看得见摸不着」、触摸穿透到战场画布；② 滚动区要 `touch-action: pan-y`（战场容器是 `touch-action:none`）；③ 必须自带「关闭」按钮（点空白关闭与 Esc 全死）。
 - **协议加类型**：C2S/S2C 表里声明即可（`PROTOCOL_VERSION` 不动），客户端按 hello 广播目录自动识别。
@@ -28,12 +30,14 @@
 
 - 服务端补丁：容器内 `grep` 补丁标记（如 `HEADLESS_SLICE_MS = 40`、`soloUntimed) return null`）。
 - 卡池乘数：容器内跑 `/tmp/pool-smoke.mjs`（GameData 直构，4p→10、5p→15、20p→50）。
+- 房主倍速：`docker logs stronghold-forge | grep "match speed"`（每次调整都有一条 `host ... set match speed ×N (gameSpeed M)`）。
 - 客户端改动：浏览器有 Service Worker 缓存，**验证必须清 Cache Storage / 注销 SW**；自动化验收可用 browser-use 真局实测（elementFromPoint 命中、cua.scroll 实滚）。
+- browser-use 实测卫生：测试局结束必须点「离开」；SOLO 局断线保护 24h（`singleReconnectTime`），直接关页面会留幻影房（清场=`docker restart stronghold-forge`，先看 healthz 有没有别人在线）。
 
 ## 更新上游版本的流程
 
 1. 下载新 release 的 `src.zip` + `win-x64.zip`；
-2. src.zip 解压为新基线，重放本仓库的补丁文件（都是独立文件替换，冲突面小；`shared/protocol.js` 同时承载 3/6 两个补丁，注意两段都补）；
+2. src.zip 解压为新基线，重放本仓库的补丁文件（都是独立文件替换，冲突面小；`shared/protocol.js` 同时承载 3/6/7 三个补丁，注意三段都补）；
 3. win-x64 抽 `public/assets`、`public/fonts` 挂载（1.2GB，不入库）；
 4. `docker build -t stronghold-forge:<新版本> . && docker rm -f stronghold-forge && docker run ...`（run 参数见部署笔记）。
 

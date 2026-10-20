@@ -898,6 +898,8 @@ export const C2S = {
   'g.unitStats': { seq: (v) => isInt(v, 0, 2 ** 31), $optional: ['seq'] },
   // [local-patch 2026-10-20] the shared chess pool's live occupancy: answered by the push m.pool { round, pool }
   'g.pool': {},
+  // [local-patch 2026-10-21] 房主对局倍速（仅房主）：全房真人与 AI 统一节奏，rate 乘在官方 2× 基速上
+  'g.matchSpeed': { rate: (v) => isInt(v, 1, 4) },
   // incremental m.public (DESIGN §8.2 "incremental frame"): the client could not merge a delta — it holds no
   // materialized state, or a patch named a seat it does not know — and asks for the full frame again. The answer is a
   // unicast full m.public; a spectator seat may ask too (watching includes resyncing what it watches)
