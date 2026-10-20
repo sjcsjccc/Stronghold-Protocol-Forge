@@ -1,0 +1,42 @@
+# 本地补丁清单（wsp.sjcsjccc.top 部署定制）
+
+基于 [XiaMo233M/Stronghold-Protocol-Forge](https://github.com/XiaMo233M/Stronghold-Protocol-Forge) **v0.19.1-0.3.1** 的 release 源码（基线提交 = src.zip 原件，逐字节未动）。
+
+部署形态：hk 服务器 Docker 容器（源码树与 main 分支逐字节一致，Dockerfile 构建；素材 assets/fonts 不在本仓库，来自 win-x64 包运行时挂载）。
+
+## 补丁一览
+
+| # | 提交 | 文件 | 改动 | 一句话 |
+|---|------|------|------|--------|
+| 1 | AI 模拟切片 | `server/match/fields.js` | `HEADLESS_SLICE_MS` 8→40 | 真人清场后等 AI 出结果快 5 倍 |
+| 2 | 大厅在线人数 | `public/js/screens/lobby.js` | +15s 轮询 /healthz 直写 DOM | 修复上游「N 名博士在线」恒死值 |
+| 3 | 战局一览 | `server/lobby.js` `shared/protocol.js` | +`room.list` 分发与声明 | 唤醒客户端沉睡的大厅观战 UI |
+| 4 | 整备期免倒计时 | `server/match/match/prep.js` | `isSolo`→`soloUntimed` | 1 真人 + N AI 房整备不限时 |
+| 5 | 卡池乘数缩放 | `server/match/Match.js` `server/match/gamedata.js` | 乘数 `max(2, ceil(开局人数/2))` | 超编房不再 20 人抢 4 人份牌 |
+| 6 | 卡池余量面板 | `server/match/match/intents.js` `shared/protocol.js` `public/js/ui/shopBar.js` `public/js/ui/poolPanel.js`(新) | +`g.pool`/`m.pool` +面板 UI | 整备期查看每个干员剩余张数 |
+
+所有代码内改动都带 `[local-patch 2026-10-19|20]` 注释标记，可全文搜索定位。
+
+## 关键机制笔记（改前必读）
+
+- **lobby 消息分发**：handler 必须自己 `sendSession(session, {...})` 发回执（**必须带请求 rid**）并 `return OK`；直接 return 载荷会被无声丢弃。
+- **游戏内弹窗三件套**：Modal 遮罩/盒子默认 `pointer-events: none`（不挡战场操作）⇒ ① 内容根节点显式 `pointerEvents:'auto'`，否则整个面板「看得见摸不着」、触摸穿透到战场画布；② 滚动区要 `touch-action: pan-y`（战场容器是 `touch-action:none`）；③ 必须自带「关闭」按钮（点空白关闭与 Esc 全死）。
+- **协议加类型**：C2S/S2C 表里声明即可（`PROTOCOL_VERSION` 不动），客户端按 hello 广播目录自动识别。
+- **人数×难度**：单人房映射 `mode_single_*`、同盟房映射 `mode_multi_*`，同名难度曲线不同（联合版更陡）；BOSS 血池 = 基础 × 开战存活数（上限房座数）；牌库按星级固定张数 12/14/18/16/8/5（1-6★），联合房整体乘 `coopPoolMultiplier`。
+
+## 验证方法
+
+- 服务端补丁：容器内 `grep` 补丁标记（如 `HEADLESS_SLICE_MS = 40`、`soloUntimed) return null`）。
+- 卡池乘数：容器内跑 `/tmp/pool-smoke.mjs`（GameData 直构，4p→10、5p→15、20p→50）。
+- 客户端改动：浏览器有 Service Worker 缓存，**验证必须清 Cache Storage / 注销 SW**；自动化验收可用 browser-use 真局实测（elementFromPoint 命中、cua.scroll 实滚）。
+
+## 更新上游版本的流程
+
+1. 下载新 release 的 `src.zip` + `win-x64.zip`；
+2. src.zip 解压为新基线，重放本仓库的补丁文件（都是独立文件替换，冲突面小；`shared/protocol.js` 同时承载 3/6 两个补丁，注意两段都补）；
+3. win-x64 抽 `public/assets`、`public/fonts` 挂载（1.2GB，不入库）；
+4. `docker build -t stronghold-forge:<新版本> . && docker rm -f stronghold-forge && docker run ...`（run 参数见部署笔记）。
+
+## 回滚
+
+每个补丁一个独立提交，`git revert <commit>` 即可单独摘除任一补丁；服务器上另有历史档案 `/data/forge-duel/patches/*.{orig,patched}`。
