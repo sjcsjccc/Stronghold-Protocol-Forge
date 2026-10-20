@@ -457,14 +457,20 @@ export function PauseButton({ paused, busy = false, onToggle }) {
  * 这里改的是**这台机器看得多快**，两者相乘，服务端不参与、也不需要参与。
  *
  * 与「暂停」的区别（原件注释同一条）：暂停是服务端往返（单人对局），倍速不是。
- * @param {{ speed?: number|null, onSpeed: (next: number) => void }} props
+ *
+ * [local-patch 2026-10-21] `disabled`：非房主的倍速按钮呈禁用态（对局节奏由房主统一控制，个人回放倍率
+ * 会让回合等最慢的人，破坏统一）；`speed` 此时显示的是当前对局倍速（从最近一场 b.start 的 speed 派生）。
+ * @param {{ speed?: number|null, onSpeed: (next: number) => void, disabled?: boolean, hint?: string|null }} props
  */
-export function SpeedButton({ speed, onSpeed }) {
+export function SpeedButton({ speed, onSpeed, disabled = false, hint = null }) {
   const cur = RATE_STEPS.includes(Number(speed)) ? Number(speed) : 1;
   const next = RATE_STEPS[(RATE_STEPS.indexOf(cur) + 1) % RATE_STEPS.length];
-  return html`<${Tooltip} text=${t('战斗倍速 {cur}× · 点击切到 {next}×（只加快播放，结果不变）', { cur, next })} placement="bottom">
-    <button type="button" class="speedbtn tapx" aria-label=${t('战斗倍速 {cur}×', { cur })}
-        data-testid="speed" onClick=${() => onSpeed?.(next)}><span class="num">${cur}×</span></button>
+  const tip = disabled
+    ? (hint || t('对局倍速由房主统一控制'))
+    : t('战斗倍速 {cur}× · 点击切到 {next}×（只加快播放，结果不变）', { cur, next });
+  return html`<${Tooltip} text=${tip} placement="bottom">
+    <button type="button" class=${cx('speedbtn', 'tapx')} aria-label=${t('战斗倍速 {cur}×', { cur })} disabled=${disabled}
+        data-testid="speed" onClick=${() => !disabled && onSpeed?.(next)}><span class="num">${cur}×</span></button>
   <//>`;
 }
 
@@ -484,7 +490,7 @@ export function SpeedButton({ speed, onSpeed }) {
  */
 export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onReady, readyBusy, readyCount, playerCount, pen = false, penAvail = false, onPen = () => {},
   config = null, frozenAt = null, pause = null, live = null, spectator = false,
-  speed = null, onSpeed = () => {},
+  speed = null, onSpeed = () => {}, speedDisabled = false, speedHint = null,
   spectators = null, myId = null, isHost = false, onRemoveSpectator = null, room = null }) {
   const phase = pub?.phase;
   const boss = isBossPhase(phase);
@@ -551,7 +557,7 @@ export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, pri
           ? html`<${Countdown} seconds=${frozenSecs} total=${total ?? undefined} size="md" label="PAUSED" />`
           : html`<${Countdown} deadline=${pub?.deadline} total=${total ?? undefined} size="md" />`}
         ${pause && (pause.show || pause.paused) ? html`<${PauseButton} paused=${!!pause.paused} busy=${pause.busy} onToggle=${pause.onToggle} />` : null}
-        ${onSpeed ? html`<${SpeedButton} speed=${speed} onSpeed=${onSpeed} />` : null}
+        ${onSpeed || speedDisabled ? html`<${SpeedButton} speed=${speed} onSpeed=${onSpeed} disabled=${speedDisabled} hint=${speedHint} />` : null}
       </div>
       <${OvertimeWarning} ot=${ot} />
       ${showReady ? html`<${ReadyToggle} priv=${priv} onToggle=${onReady} busy=${readyBusy} readyCount=${readyCount} total=${playerCount} />` : null}

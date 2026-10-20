@@ -1697,13 +1697,13 @@ function MatchScreen() {
         pen=${pen} penAvail=${penAvail} onPen=${togglePen} config=${gd.config} frozenAt=${frozenAt}
         pause=${canPause || paused ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null}
         live=${liveLpNow} spectator=${spectator}
-        speed=${specFacts.isHost ? matchRate : playRate}
-        onSpeed=${battleRunner ? (n) => {
-          if (specFacts.isHost) {
-            setMatchRate(n);
-            net.request('g.matchSpeed', { rate: n }).catch(() => setMatchRate(1));
-          } else setPlayRate(battleRunner.setRate(n));
+        speed=${specFacts.isHost ? matchRate : (Number.isFinite(field?.speed) && field.speed > 0 ? Math.round((field.speed / 2) * 10) / 10 : 1)}
+        onSpeed=${battleRunner && specFacts.isHost ? (n) => {
+          setMatchRate(n);
+          net.request('g.matchSpeed', { rate: n }).catch(() => setMatchRate(1));
         } : null}
+        speedDisabled=${!specFacts.isHost}
+        speedHint=${t('对局倍速由房主统一控制（当前 ×{rate}），真人与 AI 同速', { rate: specFacts.isHost ? matchRate : (Number.isFinite(field?.speed) && field.speed > 0 ? Math.round((field.speed / 2) * 10) / 10 : 1) })}
         spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom} />
 
       <div class="gm__bonds">
