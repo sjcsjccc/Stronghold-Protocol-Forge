@@ -1,0 +1,37 @@
+# Normalise line endings in the repository; check out Windows scripts with CRLF (cmd.exe needs it for labels/goto)
+# and shell scripts with LF, whatever core.autocrlf says on the cloning machine.
+* text=auto
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf
+*.mjs text eol=lf
+*.js  text eol=lf
+*.py  text eol=lf
+# Text the tests read and match line by line (CSS rules, HTML, data, docs): LF everywhere, so a Windows checkout
+# (core.autocrlf=true) runs `node --test` exactly like Linux and macOS.
+*.css  text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+# Extension-less text files (dotfiles, Dockerfile, LICENSE). Without these lines `* text=auto` checks them out
+# with CRLF on Windows (core.autocrlf=true) and a test that reads one line by line then fails there:
+# test/plugin-package.test.js compares .dockerignore's 14 rules against a split('\n') result, and on a CRLF
+# checkout every line carries a trailing \r.
+.dockerignore          text eol=lf
+.gitignore             text eol=lf
+.gitattributes         text eol=lf
+.git-blame-ignore-revs text eol=lf
+Dockerfile             text eol=lf
+LICENSE                text eol=lf
+# binary assets
+*.png binary
+*.jpg binary
+*.webp binary
+*.skel binary
+*.woff2 binary
+*.otf binary
+*.ttf binary
+*.mp3 binary
+*.ogg binary
