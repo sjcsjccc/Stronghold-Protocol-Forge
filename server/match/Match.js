@@ -352,6 +352,9 @@ export class Match {
     this.formView = formView(this.data && this.data.chess, this.eliteForm, { tokens: this.data && this.data.tokens });
     this.gd = new GameData(this.data, this.modeId, {
       ...(this.seatCap ? { seatCap: this.seatCap } : {}),
+      // [local-patch 2026-10-20] 开局人数（opts.seats：真人 + AI，第 289 行已保证非空数组）：gamedata.js
+      // poolCopies 的卡池乘数按它缩放——20 座房开局 10× 库存，4 人及以下仍是官方 2×。
+      players: opts.seats.length,
       // 本局的口径（DESIGN §28.39）。空数组 = 没有包声明口径 ⇒ `GameData` 一个字节都不动。
       variants: this.variants,
       // 本局的行为开关（DESIGN §28.43.1）：prep 侧的 `pieceBonds` 从这一份读取视图里读 `morphPairing`。

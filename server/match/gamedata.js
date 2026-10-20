@@ -167,6 +167,10 @@ export class GameData {
      * boss-pool ceiling reads it — see bossPoolShareOf.
      */
     this.seatCap = Number.isFinite(opts?.seatCap) && opts.seatCap >= 1 ? Math.floor(opts.seatCap) : MAX_SEATS;
+    // [local-patch 2026-10-20] 开局人数（Match 建这一局时传 `players: opts.seats.length`，真人 + AI）：卡池副本
+    // 乘数按它缩放（poolCopies）——官方 ×2 是 4 人房的实测校准，超编房保持同样的「2 名玩家 / 1× 库存」密度。
+    // 没传（Studio / 测试等旧调用方）⇒ `null`，poolCopies 走官方行为，一个字节都不动。
+    this.matchPlayers = Number.isInteger(opts?.players) && opts.players >= 1 ? opts.players : null;
     this.economy = this.config.economy && typeof this.config.economy === 'object' ? this.config.economy : {};
     const chess = this.raw.chess && typeof this.raw.chess === 'object' ? this.raw.chess : {};
     this._chess = chess;
@@ -447,7 +451,12 @@ export class GameData {
     // Co-op doubles the single-player counts: the measured shared pool (shared by the whole team, independent of team
     // size) and each player's private 自选 stock alike — the maintainer's decision of 2026-10-15 (GitHub #650): with
     // the shared pool doubled and the 自选 stock not, a 自选 operator was diluted in the copy-weighted rolls.
-    const multiplier = this.isSolo ? 1 : posIntOr(this.economy.coopPoolMultiplier, 1);
+    // [local-patch 2026-10-20] 乘数随开局人数缩放：`coopPoolMultiplier`（2）保留为下限（≤4 人的局逐字节是官方
+    // 行为），超出后按 ceil(开局人数 / 2) 增长——正好延续官方「4 名玩家吃 2× 库存」的每人均衡（2 名玩家 /
+    // 1× 库存），20 座房开局即 10×，卡池不再被超编的 shopper 抢穿。Solo 恒 1×；没传开局人数的调用方走官方值。
+    const configured = posIntOr(this.economy.coopPoolMultiplier, 1);
+    const scaled = this.matchPlayers ? Math.ceil(this.matchPlayers / 2) : 0;
+    const multiplier = this.isSolo ? 1 : Math.max(configured, scaled);
     return base * multiplier;
   }
 
