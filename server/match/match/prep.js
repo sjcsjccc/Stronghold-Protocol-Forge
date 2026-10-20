@@ -24,10 +24,10 @@ export class MatchPrep {
       ps.recompute();
     }
     // A co-op room waits for every alive seat's Ready (maybeEndPrep), so a human able to press it must have a
-    // deadline — otherwise that human's silence stalls the match forever (docs/PS100-MIGRATION.md §5, the
-    // 「1 真人 + N AI」 room: `prepFallbackGuard`). `soloUntimed` still governs the OTHER phases (INFO_CHECK,
-    // BAND_DRAFT, SP_DRAFT and the silent presentation steps); here the guard only hands that lone human the co-op
-    // prep timer it was missing.
+    // deadline — otherwise that human's silence stalls the match forever (docs/PS100-MIGRATION.md §5).
+    // [local-patch 2026-10-20] the lone-human co-op room (1 真人 + N AI) is untimed here as well now
+    // (prepDeadlineSeconds keys off `soloUntimed`): its only human ends the prep by pressing Ready, and the
+    // 25 s `prepFallbackGuard` arm below no longer fires for it.
     //
     // The round's own prepTime decides 0 vs a deadline, exactly as before: a round that declares `prepTime: null`
     // means UNTIMED and stays untimed (the config is the authority on whether this round is timed at all — the
@@ -44,18 +44,22 @@ export class MatchPrep {
    * Seconds of this round's prep deadline (null = untimed). The SINGLE definition of the rule, so the prep and the
    * `attachAudit` check can never drift apart:
    *
-   *   * solo (and any room with no seat able to press Ready) → null: nobody waits on anybody, and there is no Ready
-   *     gate that could stall;
-   *   * the round declares a `prepTime` → that value (today's behaviour, unchanged);
-   *   * the round declares none, but this is the lone-human co-op room (`prepFallbackGuard`) → the official
-   *     `timers.infoCheck` guard, so that human's silence can never stall the match (docs/PS100-MIGRATION.md §5);
-   *   * otherwise → null: the data left this round untimed and it stays untimed.
+   *   * solo, any room with no seat able to press Ready, and — [local-patch 2026-10-20] — the lone-human co-op
+   *     room (1 human + AI teammates, `soloUntimed`) → null: nobody waits on anybody; the lone human ends the
+   *     prep with their own Ready press, so their silence can stall only their own run;
+   *   * a co-op room with ≥2 humans and a round that declares a `prepTime` → that value (upstream behaviour);
+   *   * otherwise → null: the data left this round untimed and it stays untimed. The old lone-human
+   *     `prepFallbackGuard` arm (25 s `timers.infoCheck`) is unreachable since the patch and is kept only so a
+   *     revert is a one-token change.
    *
    * @returns {number|null}
    */
   prepDeadlineSeconds() {
-    // SOLO only — NOT `soloUntimed`, which is also true for the lone-human co-op room this whole guard exists for.
-    if (this.isSolo) return null;
+    // [local-patch 2026-10-20] was `this.isSolo`: the lone-human co-op room (1 真人 + N AI) now gets an untimed
+    // prep too (owner's call — the anti-stall guard only ever waited on that human's own silence, and
+    // `soloUntimed` already untimes INFO_CHECK / BAND_DRAFT / SP_DRAFT for this shape). Co-op rooms with ≥2
+    // humans keep the round's prepTime unchanged.
+    if (this.soloUntimed) return null;
     const declared = this.gd.prepTime(this.round);
     if (declared != null) return declared;
     return this.prepFallbackGuard ? this.gd.timer('infoCheck') : null;
