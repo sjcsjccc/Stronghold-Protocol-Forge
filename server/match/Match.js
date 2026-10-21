@@ -354,7 +354,8 @@ export class Match {
     this.gd = new GameData(this.data, this.modeId, {
       ...(this.seatCap ? { seatCap: this.seatCap } : {}),
       // [local-patch 2026-10-20] 开局人数（opts.seats：真人 + AI，第 289 行已保证非空数组）：gamedata.js
-      // poolCopies 的卡池乘数按它缩放——20 座房开局 10× 库存，4 人及以下仍是官方 2×。
+      // poolCopies 的乘数按它缩放。2026-10-21 补丁⑨起变体局牌池按小队共享 ⇒ 密度由下面的 poolShare（4 席）
+      // 决定 = 官方 2×；players 现在只对 ≤4 人的共享池有意义（公式对它们恒等于官方 2×）。
       players: opts.seats.length,
       // [local-patch 2026-10-21] 牌池共享口径：变体局（>4 参战者）每个牌池由一个小队（4 席）共享 ⇒ 密度按 4 人
       // 算 = 官方 4 人房的 2×；≤4 人局仍按开局人数（公式对它们本就恒等于官方 2×）。

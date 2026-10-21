@@ -382,16 +382,16 @@ test('a sliced rehearsal is dropped when the prep ends first; the default layout
   m.dispose();
 });
 
-test('AI takeover resolves a personal choice in the lone-human PREP (timed since docs/PS100-MIGRATION.md §5), including generator-error Ready cleanup', () => {
+test('AI takeover resolves a personal choice in the lone-human PREP (untimed since local patch ④ 整备期免倒计时), including generator-error Ready cleanup', () => {
   for (const broken of [false, true]) {
     const h = makeMatch({ mode: 'coop', humans: 1, seed: 6, fake: true, botSliceMs: 0 }).start();
     h.toPrep(1);
     const m = h.m, ps = h.ps('p_0');
-    // PREP is the ONE phase a lone human's room still TIMES: the prep ends on every alive seat's Ready, so with no
-    // deadline that human's silence stalled the match forever (docs/PS100-MIGRATION.md §5 — the fix that armed it).
-    // Every OTHER phase outside a battle stays untimed; draft.test.js pins the exception and that list.
-    assert.ok(m.deadline > 0, 'single-human co-op PREP is timed');
-    assert.ok(m._phaseTimer != null, 'and its deadline has a timer');
+    // [local-patch 2026-10-19④] the owner took lone-human prep untimed on purpose (整备期没有倒计时): the anti-stall
+    // deadline the PS100 migration armed here is deliberately gone (the human can always leave; draft.test.js pins
+    // the untimed phase list this test agrees with).
+    assert.equal(m.deadline, 0, 'single-human co-op PREP is untimed');
+    assert.ok(m._phaseTimer == null, 'and no phase timer is armed');
     const art = giveItem(m, ps, 'chess_item_6_03_m');
     assert.deepEqual(ps.useArt(art.uid, 10, 5), { ok: true });
     const pick = m.autoPickPersonalChoice.bind(m), modes = [];

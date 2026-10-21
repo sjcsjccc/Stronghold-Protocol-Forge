@@ -36,6 +36,8 @@ function randomIntent(rng, m, ps) {
     // 少了这一行它会掉进 `default`（`{ t }` 缺字段）⇒ 这一条断言当场红 —— 这正是它该做的事：**表里加了类型
     // 就必须同时教会这里怎么造合法载荷**，否则新意图永远进不了模糊测试的覆盖。
     case 'g.unequip': return { t, itemUid: uid() };
+    // [local-patch 2026-10-21] 补丁⑦：倍速 rate 1–4 —— 同 g.unequip 的规矩，表里加了类型就教会这里造合法载荷。
+    case 'g.matchSpeed': return { t, rate: 1 + rng.int(4) };
     case 'g.art': return { t, itemUid: uid(), row: rng.int(19), col: rng.int(21) };
     case 'g.reward': case 'g.choice': return { t, idx: rng.int(6) };
     case 'g.ready': return { t, ready: rng() < 0.4 };

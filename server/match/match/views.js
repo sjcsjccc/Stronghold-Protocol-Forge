@@ -141,9 +141,6 @@ export class MatchViews {
         return v;
       }),
     };
-    // [skin-debug 临时] 2026-10-21 排查局内换装
-    const __sk = this.order.filter((p) => p && Object.keys(p.skins || {}).length);
-    if (__sk.length) this.log.info?.(`[skin-debug] publicView skins: ${JSON.stringify(__sk.map((p) => ({ id: p.playerId, skins: p.skins })))}`);
     if (this.offers.length) v.offers = this.offerViews();
     if (this.teamLp != null) v.teamLp = Math.max(0, Math.round(this.teamLp));
     // 最终攻势 / 隐秘核心: when the overtime drain starts (ms epoch; `deadline` is the level's 120 s countdown)
