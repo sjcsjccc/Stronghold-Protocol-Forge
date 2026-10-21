@@ -239,7 +239,9 @@ export function countdownState(deadline, now, total, warnAt = 10) {
  * @param {any} config data/config.json
  * @param {string|null} [myId]
  */
-export function phaseTotalSeconds(pub, config, myId = null) {
+// `spPriv`: the viewer's already-normalized 机变 draft ([local-patch 2026-10-21]) — the squad variant's draft lives in
+// m.private.sp, so the caller passes it in; null falls back to the shared m.public.sp as before.
+export function phaseTotalSeconds(pub, config, myId = null, spPriv = null) {
   if (!isObj(pub)) return null;
   const timers = isObj(config?.timers) ? config.timers : {};
   const mode = isObj(config?.modes) ? config.modes[pub.modeId] : null;
@@ -250,7 +252,7 @@ export function phaseTotalSeconds(pub, config, myId = null) {
     case PHASE.BAND_DRAFT: return num(pub.draft?.turnSeconds) ?? num(timers.bandTurn) ?? 30;
     case PHASE.BATTLE_CHECK: return num(timers.battleCheck) ?? 3;
     case PHASE.SP_DRAFT: {
-      const sp = normalizeSp(pub.sp, pub.players);
+      const sp = spPriv || normalizeSp(pub.sp, pub.players);
       const first = !sp || sp.pickedCount === 0;
       return first ? (num(timers.spFirst) ?? 30) : (num(timers.spTurn) ?? 16);
     }

@@ -10,12 +10,17 @@ import { onPickCard } from '../botEmotes.js';
 import { weightedPick } from '../waves.js';
 import { botPickCard } from '../bot.js';
 import { OK, fail, DELAYS } from './common.js';
+import { SQUAD_SIZE } from '../unite100.mjs';
 
 /** Cards of the personal choice (PRTS 卫戍协议：盟约 下半 §法术 教鞭: "于3个战术特训的悬赏任务中选择一项"). */
 const PERSONAL_OFFER_SIZE = 3;
 
 export class MatchSpDraft {
   enterSpDraft() {
+    // 机变按小队 (the > MAX_SEATS participants variant, [local-patch 2026-10-21]): each squad (the seats' floor(seat/4)
+    // groups, unite100's SQUAD_SIZE) drafts its OWN six cards in parallel; every player sees only its squad's draft
+    // (m.private.sp via MatchViews.spViewFor — no m.public.sp in this mode; one screen is still the official 3×2 of six).
+    if (this.variant) { this._enterSpSquads(); return; }
     const draft = generateDraft(this.gd, this.rngDraft, this.round, { stageId: this.stageId, bondAvailable: (bondId) => this.bondLive(bondId), itemAvailable: id => this.itemPool.canGain(id) });
     const alive = this.alivePlayers();
     if (!draft || !alive.length) { this.beforePrepOffers(); return; }
@@ -85,7 +90,18 @@ export class MatchSpDraft {
   }
 
   pickCard(ps, idx) {
-    if (this.phase !== PHASE.SP_DRAFT || !this.sp) return fail(ERR.WRONG_PHASE);
+    if (this.phase !== PHASE.SP_DRAFT || (!this.sp && !this.spSquads)) return fail(ERR.WRONG_PHASE);
+    if (Array.isArray(this.spSquads)) { // the variant: the pick lands in the player's own squad's draft only
+      const sq = this.spSquadOf(ps);
+      if (!sq) return fail(ERR.WRONG_PHASE);
+      if (!ps.alive) return fail(ERR.ELIMINATED);
+      if (sq.picks[ps.playerId] != null) return fail(ERR.ALREADY);
+      if (sq.order[sq.idx] !== ps.playerId) return fail(ERR.NOT_YOUR_TURN);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= sq.cards.length) return fail(ERR.BAD_TARGET);
+      if (!this._spAvail(sq, sq.cards[idx])) return fail(ERR.SOLD_OUT);
+      this._applySpPick(ps, sq, idx);
+      return OK;
+    }
     if (!ps.alive) return fail(ERR.ELIMINATED);
     if (this.sp.picks[ps.playerId] != null) return fail(ERR.ALREADY);
     if (this.spTurn() !== ps.playerId) return fail(ERR.NOT_YOUR_TURN);
@@ -113,7 +129,121 @@ export class MatchSpDraft {
     if (this.phase !== PHASE.SP_DRAFT) return;
     this.cancel(this._turnTimer);
     this._turnTimer = null;
+    if (Array.isArray(this.spSquads)) for (const sq of this.spSquads) this.cancel(sq._timer);
     this.beforePrepOffers();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────────────────
+  // 机变按小队 (the > MAX_SEATS participants variant, [local-patch 2026-10-21]; the design item B of
+  // docs/PS100-MIGRATION.md §10-C, scoped to squads of SQUAD_SIZE seats): per-squad six-card drafts run in
+  // parallel, one FieldRunner-style turn chain each; a card is gone only within its own squad. The viewer's
+  // squad draft reaches it as m.private.sp (MatchViews.spViewFor) — m.public carries none, so no frame can
+  // leak another squad's cards. Turn countdowns are per squad: the state carries `turnDeadline` and the
+  // client reads it from the private frame (m.public.deadline stays 0; the phase cannot be paused here —
+  // g.pause is a solo-only offer and a variant match has ≥ 5 participants by definition).
+
+  /** A card of the squad's draft still pickable: untaken within the squad and (an item card) gainable. */
+  _spAvail(s, card) { return !!card && s?.taken[card.idx] == null && (card.kind !== 'item' || this.itemPool.canGain(card.id)); }
+
+  /** The viewer's own squad's draft state (the variant; null in the shared draft or outside the phase). */
+  spSquadOf(ps) {
+    if (this.phase !== PHASE.SP_DRAFT || !Array.isArray(this.spSquads)) return null;
+    const k = Number.isInteger(ps && ps.seat) && ps.seat >= 0 ? Math.floor(ps.seat / SQUAD_SIZE) : -1;
+    return this.spSquads.find((sq) => sq.squad === k) || null;
+  }
+
+  _enterSpSquads() {
+    this.phase = PHASE.SP_DRAFT;
+    const groups = new Map();
+    for (const ps of [...this.order].sort((a, b) => a.seat - b.seat)) {
+      const k = Number.isInteger(ps.seat) && ps.seat >= 0 ? Math.floor(ps.seat / SQUAD_SIZE) : -1;
+      if (k < 0) continue;
+      const list = groups.get(k);
+      if (list) list.push(ps); else groups.set(k, [ps]);
+    }
+    const list = [];
+    for (const [squad, members] of groups) {
+      const draft = generateDraft(this.gd, this.rngDraft, this.round, { stageId: this.stageId, bondAvailable: (bondId) => this.bondLive(bondId), itemAvailable: (id) => this.itemPool.canGain(id) });
+      if (!draft || !members.some((p) => p.alive)) continue;
+      let order = members.filter((p) => p.alive).map((p) => p.playerId);
+      if (!this.isSolo) this.rngDraft.shuffle(order);
+      // 「AI 队友最后选择」 (GitHub #338), per squad
+      order = this.humansFirst(order);
+      list.push({ squad, ...draft, order, idx: 0, picks: {}, taken: {}, untimed: !!this.soloUntimed, turnDeadline: 0, done: false, _timer: null, _token: 0 });
+    }
+    this.spSquads = list;
+    if (!list.length) { this.beforePrepOffers(); return; }
+    this.setDeadline(0);
+    for (const sq of list) this._startSpSquadTurn(sq);
+    this.markPublic();
+  }
+
+  _startSpSquadTurn(sq) {
+    this.cancel(sq._timer);
+    sq._timer = null;
+    while (sq.idx < sq.order.length) { // loop-cap: the squad's draft order
+      const ps = this.players.get(sq.order[sq.idx]);
+      if (ps && ps.alive && sq.picks[ps.playerId] == null) break;
+      sq.idx++;
+    }
+    const available = sq.cards.filter((c) => this._spAvail(sq, c)).map((c) => c.idx);
+    if (sq.idx >= sq.order.length || !available.length) {
+      sq.done = true;
+      sq.turnDeadline = 0;
+      for (const pid of sq.order) { const ps = this.players.get(pid); if (ps) this.markPrivate(ps); }
+      this._maybeFinishSpSquads();
+      return;
+    }
+    const token = ++sq._token;
+    if (!sq.untimed) {
+      const secs = sq.idx === 0 ? this.gd.timer('spFirst') : this.gd.timer('spTurn');
+      const ms = this.scaled(secs * 1000);
+      sq.turnDeadline = this.sched.now() + ms;
+      sq._timer = this.later(ms, () => {
+        if (this.phase !== PHASE.SP_DRAFT || !Array.isArray(this.spSquads) || token !== sq._token) return;
+        const ps = this.players.get(sq.order[sq.idx]);
+        if (!ps) return;
+        const avail = sq.cards.filter((c) => this._spAvail(sq, c)).map((c) => c.idx);
+        if (!avail.length) { this._maybeFinishSpSquads(); return; }
+        this._applySpPick(ps, sq, avail[Math.floor(this.rngDraft() * avail.length)]);
+      });
+    } else {
+      sq.turnDeadline = 0;
+    }
+    const cur = this.players.get(sq.order[sq.idx]);
+    if (cur && cur.botControlled) this._scheduleSpSquadBot(sq);
+    for (const pid of sq.order) { const ps = this.players.get(pid); if (ps) this.markPrivate(ps); }
+    this.markPublic();
+  }
+
+  _maybeFinishSpSquads() {
+    if (this.phase !== PHASE.SP_DRAFT || !Array.isArray(this.spSquads)) return;
+    if (this.spSquads.every((x) => x.done)) { this.setDeadline(0); this.later(0, () => this.finishSpDraft()); }
+  }
+
+  _scheduleSpSquadBot(sq) {
+    const token = sq._token;
+    this.later(this.scaled(DELAYS.BOT_ACTION), () => {
+      if (this.phase !== PHASE.SP_DRAFT || !Array.isArray(this.spSquads) || token !== sq._token) return;
+      const ps = this.players.get(sq.order[sq.idx]);
+      if (!ps || !ps.botControlled) return;
+      const avail = sq.cards.filter((c) => this._spAvail(sq, c)).map((c) => c.idx);
+      if (!avail.length) return;
+      this._applySpPick(ps, sq, botPickCard(this, ps, sq.cards, avail));
+    });
+  }
+
+  _applySpPick(ps, sq, idx) {
+    if (!sq || sq.picks[ps.playerId] != null || !this._spAvail(sq, sq.cards[idx])) return;
+    const card = sq.cards[idx];
+    if (!card) return;
+    sq.picks[ps.playerId] = idx;
+    sq.taken[idx] = ps.playerId;
+    try { applyCard(this, ps, card); } catch (e) { this.reportError(`applyCard ${card.id}`, e); }
+    this.markPrivate(ps);
+    this.markPublic();
+    onPickCard(this, ps, card); // AI bots say "思考" when they take a bounty (enabled by default; SP_BOT_EMOTES=0 silences it)
+    this._startSpSquadTurn(sq);
   }
 
   /**

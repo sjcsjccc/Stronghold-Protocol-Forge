@@ -305,8 +305,10 @@ function MatchScreen() {
   const editable = !offerBlocksPrep(pub?.offers) && phase === PHASE.PREP && !!priv && alive && !priv.ready && !watchingOther && !hasPersonalChoice;
   const showShop = !!priv && alive && (phase === PHASE.PREP || phase === PHASE.SP_DRAFT || phase === PHASE.ROUND_START) && !watchingOther;
   const layersDisabled = phase === PHASE.UNITE || isBossPhase(phase);
-  const sp = phase === PHASE.SP_DRAFT ? normalizeSp(pub?.sp, players) : null;
-  const total = phaseTotalSeconds(pub, gd.config, myId);
+  // 机变按小队 ([local-patch 2026-10-21], the > MAX_SEATS variant): the player's own squad's draft arrives as
+  // m.private.sp (Match.spViewFor) — the shared draft (≤ MAX_SEATS) stays in m.public.sp. One screen is still 3×2 of six.
+  const sp = phase === PHASE.SP_DRAFT ? normalizeSp(priv?.sp ?? pub?.sp, players) : null;
+  const total = phaseTotalSeconds(pub, gd.config, myId, sp);
   // solo pause: offered in the own battle; while m.public.paused every HUD clock stops at the pause moment
   const paused = isPaused(pub);
   const pauseSeenRef = useRef(null);
@@ -920,7 +922,8 @@ function MatchScreen() {
   }, [battleState?.battleId, battleState?.loading, !!pub]);
 
   // timer ticks (≤ 10 s) while the player still has something to do
-  const cd = countdownState(pub?.deadline, serverNow(), total);
+  // the squad variant's turn clocks are per squad (m.private.sp.turnDeadline); the shared draft keeps m.public.deadline
+  const cd = countdownState(phase === PHASE.SP_DRAFT && priv?.sp?.turnDeadline ? priv.sp.turnDeadline : pub?.deadline, serverNow(), total);
   useTicker(cd.remain != null && cd.remain <= 10 ? 1000 : 0);
   const lastTick = useRef(null);
   useEffect(() => {

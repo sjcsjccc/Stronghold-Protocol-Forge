@@ -50,9 +50,13 @@ export class MatchViews {
       case PHASE.BAND_DRAFT:
         if (this.draft && this.draft.picks[ps.playerId]) return 'ready';
         return this.draft && this.draftTurn() === ps.playerId ? 'deciding' : 'acting';
-      case PHASE.SP_DRAFT:
+      case PHASE.SP_DRAFT: {
+        // the squad variant ([local-patch 2026-10-21]): the viewer's own squad's draft decides ready/deciding
+        const sq = !this.sp && typeof this.spSquadOf === 'function' ? this.spSquadOf(ps) : null;
+        if (sq) return sq.picks[ps.playerId] != null ? 'ready' : (sq.order[sq.idx] === ps.playerId ? 'deciding' : 'acting');
         if (this.sp && this.sp.picks[ps.playerId] != null) return 'ready';
         return this.sp && this.spTurn() === ps.playerId ? 'deciding' : 'acting';
+      }
       case PHASE.PREP: return ps.ready ? 'ready' : 'acting';
       case PHASE.COMBAT: case PHASE.FINAL_ASSAULT: case PHASE.HIDDEN_CORE: {
         const f = this.fields.find((x) => x.players.includes(ps.playerId));
@@ -298,6 +302,24 @@ export class MatchViews {
     }
     const loss = Math.min(this.gd.lpCapPerRound, Math.max(0, Math.trunc(Number(n) || 0)));
     return loss > 0 ? { pendingLp: loss } : {};
+  }
+
+  /**
+   * The viewer's own 机变 draft for m.private ([local-patch 2026-10-21], the squad variant): the same shape the
+   * shared draft publishes as m.public.sp, but scoped to the viewer's squad (spSquadOf) and with the squad's turn
+   * deadline so the client's countdown runs on it (m.public.deadline stays 0 in this mode). Null in the shared
+   * draft (≤ MAX_SEATS participants — that one stays public) and outside the phase.
+   */
+  spViewFor(ps) {
+    if (this.phase !== PHASE.SP_DRAFT || this.sp || !Array.isArray(this.spSquads)) return null;
+    const sq = typeof this.spSquadOf === 'function' ? this.spSquadOf(ps) : null;
+    if (!sq) return null;
+    return {
+      family: sq.family, name: sq.name, desc: sq.desc, eventId: sq.eventId,
+      cards: sq.cards.map(c => ({ ...cardView(c), soldOut: c.kind === 'item' && !this.itemPool.canGain(c.id) })), order: sq.order.slice(),
+      turn: sq.order[sq.idx] ?? null, picks: { ...sq.picks }, taken: { ...sq.taken }, untimed: !!sq.untimed,
+      turnDeadline: sq.turnDeadline || 0, squad: sq.squad,
+    };
   }
 
   /** nextEnemies preview for m.private. */

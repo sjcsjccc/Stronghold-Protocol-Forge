@@ -343,6 +343,27 @@ export function attachAudit(m, { invariants = true, limit = 200 } = {}) {
     return res;
   });
   wrap(m, 'finishSpDraft', function (orig) {
+    const squads = m.spSquads; // [local-patch 2026-10-21] the squad variant: per-squad invariants, then the same total coverage
+    if (m.phase === PHASE.SP_DRAFT && Array.isArray(squads)) check('sp draft (squads)', () => {
+      const alive = m.alivePlayers().map((p) => p.playerId);
+      const squadOf = new Map();
+      for (const ps of m.order) squadOf.set(ps.playerId, Number.isInteger(ps.seat) && ps.seat >= 0 ? Math.floor(ps.seat / SQUAD_SIZE) : -1);
+      const covered = [];
+      for (const sq of squads) {
+        const want = alive.filter((pid) => squadOf.get(pid) === sq.squad);
+        if (JSON.stringify(sq.order.slice().sort()) !== JSON.stringify(want.slice().sort())) fail(`squad ${sq.squad} 机变 order ${JSON.stringify(sq.order)} != its alive members ${JSON.stringify(want)}`);
+        if (sq.cards.length > 6) fail(`squad ${sq.squad}: ${sq.cards.length} 机变 cards (max 6)`);
+        for (const pid of want) {
+          const idx = sq.picks[pid];
+          if (idx == null) fail(`${pid} ends 机变 without a card`);
+          else if (sq.taken[idx] !== pid) fail(`${pid} picked card ${idx} held by ${sq.taken[idx]}`);
+        }
+        const holders = Object.values(sq.taken);
+        if (new Set(holders).size !== holders.length) fail(`squad ${sq.squad}: a player took two 机变 cards`);
+        covered.push(...Object.keys(sq.picks));
+      }
+      for (const pid of alive) if (!covered.includes(pid)) fail(`${pid} ends 机变 without a card (no squad plan held it)`);
+    });
     const s = m.sp;
     if (m.phase === PHASE.SP_DRAFT && s) check('sp draft', () => {
       const alive = m.alivePlayers().map((p) => p.playerId);

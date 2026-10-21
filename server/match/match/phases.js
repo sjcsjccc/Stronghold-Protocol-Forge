@@ -319,6 +319,7 @@ export class MatchPhases {
     this.unitePlan = null;
     this.uniteResultView = null;
     this.sp = null;
+    this.spSquads = null; // [local-patch 2026-10-21]
     this.wave = null;
     this.bossWaves = null;
     const alive = this.alivePlayers();
@@ -411,6 +412,7 @@ export class MatchPhases {
   beforePrepOffers() {
     // The official round start and its draw/draft finish first; only entering prep waits.
     this.sp = null;
+    this.spSquads = null; // [local-patch 2026-10-21]
     const step = () => this.enterPrep();
     if (this.openOfferWindow('prep', this.round) !== 'open') { step(); return; }
     this._offerResume = step;

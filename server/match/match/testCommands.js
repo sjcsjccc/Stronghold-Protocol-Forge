@@ -274,8 +274,12 @@ export class MatchTestCommands {
     if (name === 'prep') {
       if (this.phase === PHASE.ROUND_START) { this.setDeadline(0); this.enterPrep(); return OK; }
       if (this.phase === PHASE.SP_DRAFT) {
-        const s = this.sp;
-        if (s && s.order.some((id) => s.picks[id] == null)) return fail(ERR.WRONG_PHASE);
+        if (Array.isArray(this.spSquads)) { // [local-patch 2026-10-21] the squad variant: every squad's chain must be done
+          if (this.spSquads.some((sq) => !sq.done)) return fail(ERR.WRONG_PHASE);
+        } else {
+          const s = this.sp;
+          if (s && s.order.some((id) => s.picks[id] == null)) return fail(ERR.WRONG_PHASE);
+        }
         this.finishSpDraft();
         return OK;
       }

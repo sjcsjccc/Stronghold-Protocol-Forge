@@ -270,7 +270,9 @@ test('a single human (a 同盟 room started alone or with AI teammates only) is 
     // with no deadline the lone human's silence stalled the match forever (docs/PS100-MIGRATION.md §5). The deadline
     // is now armed, and the phase is therefore allowed to leave the prep — the stall this test used to assert as
     // "prep waits" is exactly the bug.
-    assert.ok(seen().get(PHASE.PREP)?.some((d) => d > 0), `lone-human prep is timed (${bots} AI): ${JSON.stringify(seen().get(PHASE.PREP))}`);
+    // [local-patch 2026-10-19 patch 4] the owner took lone-human prep untimed on purpose (整备期没有倒计时): the
+    // anti-stall deadline the PS100 migration armed here is deliberately gone, so PREP publishes 0 like the rest.
+    assert.ok(seen().get(PHASE.PREP)?.every((d) => d === 0), `lone-human prep is untimed (${bots} AI): ${JSON.stringify(seen().get(PHASE.PREP))}`);
     assert.ok(h.drive(() => m.phase === PHASE.PREP && m.round === 4), 'past the R3 机变');
     h.flushAll();
     // every OTHER phase outside a battle stays untimed (playtest #4 item 3): INFO_CHECK and BAND_DRAFT wait for the

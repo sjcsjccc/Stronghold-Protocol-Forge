@@ -65,6 +65,9 @@ export class PlayerViews {
     const free = this.shop.freeRefreshes > 0;
     const board = [];
     for (const { r, c, piece } of boardOrder(this.board)) board.push(this.pieceView(piece, [r, c]));
+    // 机变按小队 ([local-patch 2026-10-21], the > MAX_SEATS participants variant): the viewer's own squad's draft —
+    // the shared draft (≤ MAX_SEATS) stays in m.public. Absent outside the phase / in the shared mode.
+    const spPriv = typeof this.m.spViewFor === 'function' ? this.m.spViewFor(this) : null;
     // a boss round's prep: the partner's board on its half of the boss field (Match.bossMateView, item 51)
     const bossMate = typeof this.m.bossMateView === 'function' ? this.m.bossMateView(this) : null;
     return {
@@ -106,6 +109,7 @@ export class PlayerViews {
       bonds: bondList(this.gd, this.bondsView(), { full: true, off: offBondCounts(this.gd, this) }),
       effects: this.effectsView(),
       nextEnemies: this.m.nextEnemiesFor(this),
+      ...(spPriv ? { sp: spPriv } : {}),
       // 助战 (shared/support.js): what this player brought AND what was actually granted at round 1. They differ when
       // the server's pool changed between the lobby's check and the grant (prepareSupports re-checks), and when a granted
       // piece is sold or merged away — so the client can say which supports it is actually fighting with.

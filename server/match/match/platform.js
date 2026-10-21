@@ -354,6 +354,10 @@ export class MatchPlatform {
       return;
     }
     if (phase === PHASE.SP_DRAFT && this.sp && this.spTurn() === ps.playerId) this.startSpTurn();
+    else if (phase === PHASE.SP_DRAFT && Array.isArray(this.spSquads)) { // [local-patch 2026-10-21] the squad variant: re-arm the player's own squad's turn clock
+      const sq = this.spSquadOf(ps);
+      if (sq && !sq.done && sq.order[sq.idx] === ps.playerId) this._startSpSquadTurn(sq);
+    }
     else if (phase === PHASE.PREP) this.maybeEndPrep();
   }
 

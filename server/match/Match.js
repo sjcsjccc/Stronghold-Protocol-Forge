@@ -665,6 +665,7 @@ export class Match {
 
     this.draft = null;
     this.sp = null;
+    this.spSquads = null; // [local-patch 2026-10-21] 机变按小队 (the > MAX_SEATS variant)
     this.wave = null;
     this.bossWaves = null;
     this.bossPairs = null; // drawn once per match; the hidden round retains partners and sides
