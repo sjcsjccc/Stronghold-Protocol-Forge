@@ -13,7 +13,7 @@
 | 3 | 战局一览 | `server/lobby.js` `shared/protocol.js` | +`room.list` 分发与声明 | 唤醒客户端沉睡的大厅观战 UI |
 | 4 | 整备期免倒计时 | `server/match/match/prep.js` | `isSolo`→`soloUntimed` | 1 真人 + N AI 房整备不限时 |
 | 5 | 卡池乘数缩放 | `server/match/Match.js` `server/match/gamedata.js` | 乘数 `max(2, ceil(开局人数/2))` | 超编房不再 20 人抢 4 人份牌 |
-| 6 | 卡池余量面板 | `server/match/match/intents.js` `shared/protocol.js` `public/js/ui/shopBar.js` `public/js/ui/poolPanel.js`(新) | +`g.pool`/`m.pool` +面板 UI | 整备期查看每个干员剩余张数 |
+| 6 | 卡池余量面板 | `server/match/match/intents.js` `shared/protocol.js` `public/js/ui/shopBar.js` `public/js/ui/poolPanel.js`(新) | +`g.pool`/`m.pool` +面板 UI；**2026-10-21 修正：读 `ps.mainPool()`**（>4 人变体局每人独立牌库，`m.pool` 只是目录——修正前面板数字不随买卡变动） | 整备期查看每个干员剩余张数 |
 | 7 | 房主对局倍速 | `server/match/Match.js` `server/match/match/intents.js` `server/match/match/clientCombat.js` `server/match/fields.js` `shared/protocol.js` `public/js/screens/game.js` | +`g.matchSpeed`（仅房主，×1–×4） | 全房真人与 AI 统一战斗节奏 |
 | 8 | 机变按小队 | `server/match/match/spDraft.js` `server/match/match/views.js` `server/match/player/views.js` `server/match/match/phases.js` `server/match/match/platform.js` `server/match/match/testCommands.js` `server/match/audit.js` `server/match/Match.js` `public/js/screens/game.js` `public/js/ui/gameLogic/phases.js` `test/match/spDraftSquads.test.js`(新) | >4 参战者时每个小队（按座位 floor(seat/4) 分队）各发一副 6 张并行选，走私密视图 | 超编房机变不再「第 7 人起空手」，一屏仍是 3×2 六张 |
 
