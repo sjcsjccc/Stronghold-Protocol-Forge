@@ -477,6 +477,47 @@ test('C gate ON: what 阶段 1 does not stop is handed to another squad and foug
   m.dispose();
 });
 
+test('C gate ON [local-patch 2026-10-21]: a squad that could not field (everyone leaked, no perfect member) is relayed to another squad instead of settling straight away', () => {
+  // 6 humans: squad 0 = p_0..p_3, squad 1 = p_4..p_5. p_0 leaks (squad 0 has perfect members → its own 阶段 1 field),
+  // p_4 AND p_5 BOTH leak → squad 1 has no perfect member to send → no 阶段 1 plan at all. The design's 「whatever
+  // phase 1 did not stop」 still hands their enemies to squad 0's perfect members on a relay field (r); before the
+  // patch the plan-less squad's leaks settled straight away as LP loss.
+  const h = makeMatch({
+    mode: 'coop', humans: 6, seed: 4243, fake: true,
+    script: (b) => {
+      if (b.kind !== 'normal') return { survivors: String(b.fieldId) === 'u' ? { p_0: 1 } : {} };
+      const owner = b.players[0];
+      return owner === 'p_0' || owner === 'p_4' || owner === 'p_5' ? { leaks: { [owner]: 2 } } : {};
+    },
+  }).start();
+  const m = h.m;
+  h.toPrep(1);
+  // perfect members: squad 0's p_1..p_3 hold the line (both their own 阶段 1 field and the relay); squad 1 fields nobody
+  const ranged = chessOfTier(1, (c) => c.position === 'RANGED').filter((x) => m.pool.has(x));
+  ['p_1', 'p_2', 'p_3'].forEach((pid, i) => {
+    const ps = h.ps(pid);
+    giveOwn(m, ps, ranged[i % ranged.length], legalTileFor(m, ps, ranged[i % ranged.length]));
+  });
+  h.drive(() => m.phase === PHASE.UNITE);
+  assert.equal(m.unitePlans.length, 1, '阶段 1: only squad 0 planned (squad 1 has no perfect member)');
+  assert.equal(m.unitePlans[0].squad, 0);
+  // the plan-less squad's enemies really went to the relay round, fought by squad 0's perfect members
+  h.drive(() => m.phase === PHASE.SETTLE);
+  assert.equal(m.phase, PHASE.SETTLE);
+  const relayFields = FakeBattle.instances.filter((b) => b.kind === 'unite' && String(b.fieldId).startsWith('r'));
+  assert.equal(relayFields.length, 1, '阶段 2 started the relay battlefield for squad 1');
+  assert.equal(m.uniteRound, 2, 'the relay round is round 2');
+  assert.equal(m._uniteToken, 2, 'two 联防 rounds were started');
+  assert.ok(m.uniteResultView, 'the settlement carries the merged 联防 outcome');
+  // the settlement's per-player charges tell the truth: p_0 pays the one enemy his own 联防 let through, and the
+  // plan-less squad's leaks — held by the relay — charge p_4/p_5 NOTHING (before the patch they settled directly)
+  const losses = (m.uniteResultView && m.uniteResultView.losses) || {};
+  assert.equal(losses.p_0, 1, 'p_0 still pays the one enemy his own 联防 let through');
+  assert.ok(!losses.p_4 && !losses.p_5, `the plan-less leakers were relayed and held, not billed: ${JSON.stringify(losses)}`);
+  assert.deepEqual(collectViolations(m), []);
+  m.dispose();
+});
+
 test('C gate OFF (3 seats): a live match leaves every variant field of Match at its initial value', () => {
   const h = makeMatch({ mode: 'coop', humans: 3, seed: 3702, fake: true, script: (b) => (b.kind === 'normal' ? { leaks: { p_0: 2 } } : {}) }).start();
   const m = h.m;

@@ -29,7 +29,7 @@
 import { PHASE, GEO } from '../../../shared/constants.js';
 import { deriveSeed } from '../../sim/rng.js';
 import { uniteBattleOpts, uniteSurvivors, combineUniteResults } from '../unite.js';
-import { takeUnhandled, planRelayBySquad, relayPlanFor, squadStrength } from '../unite100.mjs';
+import { takeUnhandled, planRelayBySquad, relayPlanFor, squadStrength, carveSquadLeaks, squadIndexOf } from '../unite100.mjs';
 import { FieldRunner, timelineAt, uniteBillBounds } from '../fields.js';
 import { uniteLeft } from '../../sim/spec.js';
 import { FLOW_TICKER_PRIORITY, DELAYS } from './common.js';
@@ -169,6 +169,38 @@ export class MatchUnite {
       const res = (byPlan && byPlan.has(p)) ? byPlan.get(p) : null;
       return { plan: p, result: res, unhandled: takeUnhandled(this.gd, p, res) };
     });
+    // [local-patch 2026-10-21] 阶段 2 也要兜住「连出场资格都没有」的小队：全队都漏了 ⇒ 没有完美成员 ⇒
+    // planUniteBySquad 不给计划 ⇒ 上面这步它们的漏怪根本不在列表里，直接结算扣血 —— 而设计原文（unite100.mjs
+    // 头注）是「whatever phase 1 did not stop is handed to ONE other squad」。这里把无计划小队按各自漏怪折成
+    // 合成计划（helpers 空 = 自己没人可派），交给同一轮 planRelayBySquad 按剩余实力挑接收小队；接收方出自己的
+    // 完美成员（relayPlanFor），账仍记在原漏怪玩家头上。没人可接 / 敌人不可重放时照旧直接结算。
+    const plannedSquads = new Set(plans.map((p) => p.squad));
+    const synth = new Map();
+    for (const ps of this.alivePlayers()) {
+      const res = this.lastResults.get(ps.playerId);
+      if (!res) continue;
+      const hasLeak = (res.leaked || []).some((l) => l && l.counted !== false && this.gd.enemy(l.enemyKey));
+      if (!hasLeak) continue;
+      const k = squadIndexOf(ps.seat);
+      if (k < 0 || plannedSquads.has(k)) continue; // its squad fielded in 阶段 1: takeUnhandled already carved it
+      let entry = synth.get(k);
+      if (!entry) { entry = { squad: k, leakers: [] }; synth.set(k, entry); }
+      entry.leakers.push(ps);
+    }
+    for (const e of synth.values()) {
+      const carve = carveSquadLeaks(this, this.lastResults, e.leakers);
+      // 没有战场结果：每条可重放漏怪本身就是「未处理」。takeUnhandled 从 notReentered 读数（uniteSurvivors 的
+      // 字段残余桶），所以这里把每人的有效漏怪数亲手写进 notReentered——carve 自己的 notReentered 只收
+      // 无法重放的未知敌人，直接拿来用会把 relayable 算成 0。
+      const counts = new Map();
+      for (const ps of e.leakers) {
+        const res = this.lastResults.get(ps.playerId);
+        const n = (res.leaked || []).filter((l) => l && l.counted !== false && this.gd.enemy(l.enemyKey)).length;
+        if (n > 0) counts.set(ps.playerId, n);
+      }
+      const synthPlan = { squad: e.squad, helpers: [], leakers: e.leakers, leaked: carve.leaked, notReentered: counts };
+      phase1.push({ plan: synthPlan, result: null, unhandled: takeUnhandled(this.gd, synthPlan, null) });
+    }
     if (!phase1.some((x) => x.unhandled.relayable > 0)) { this.settle(plan, result); return; }
     const relays = planRelayBySquad(this, phase1, this.lastResults);
     if (!relays.length) { this.settle(plan, result); return; }

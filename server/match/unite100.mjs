@@ -105,26 +105,44 @@ export function planUniteBySquad(m, results) {
     }
     if (!leakers.length || !perfects.length) continue;
     const helpers = helperOrder(m, perfects, results);
-    const leaked = [];
-    const notReentered = new Map();
-    for (const ps of leakers) {
-      const r = results.get(ps.playerId);
-      for (const l of r.leaked || []) {
-        if (!l || l.counted === false) continue;
-        if (!m.gd.enemy(l.enemyKey)) { notReentered.set(ps.playerId, (notReentered.get(ps.playerId) || 0) + 1); continue; }
-        const bountyId = l.mods && l.mods.bountyId;
-        const b = bountyId ? ps.bounties.find((x) => x.id === bountyId) : null;
-        const card = b && b.card;
-        let bounty = card && card.payout !== 'perfect' && Number(card.coin) > 0 && l.enemyKey === card.enemyKey
-          ? { coins: Math.trunc(Number(card.coin)), ownerPlayerId: ps.playerId } : null;
-        const extra = !bountyId && l.mods ? Math.trunc(Number(l.mods.bountyCoins) || 0) : 0;
-        if (!bounty && extra > 0) bounty = { coins: extra, ownerPlayerId: ps.playerId };
-        leaked.push({ enemyKey: l.enemyKey, mods: l.mods ? { ...l.mods } : null, lpr: l.lpr ?? 1, sourcePlayerId: ps.playerId, tag: l.tag ?? null, bounty });
-      }
-    }
-    plans.push({ squad, helpers, leakers, leaked, notReentered });
+    const carve = carveSquadLeaks(m, results, leakers);
+    plans.push({ squad, helpers, leakers, leaked: carve.leaked, notReentered: carve.notReentered });
   }
   return plans.sort((a, b) => a.squad - b.squad);
+}
+
+/**
+ * The relayable carve of a squad's leakers ([local-patch 2026-10-21]): every counted leak as a relay template — kill
+ * bounties kept (the card pays its owner again in whatever 联防 field re-enters the enemy) — and the count of leaks
+ * whose enemy record does not exist in this installation in `notReentered` (they settle, nothing to re-enter).
+ * Shared by 阶段 1 planning (planUniteBySquad) and the PLAN-LESS squads' synthetic plans of the 阶段 2 relay
+ * (unitePhase._afterUniteRound): a squad whose every member leaked has no perfect member to send, so 阶段 1 gives it
+ * no plan — but the design's 「whatever phase 1 did not stop」 still hands its enemies to another squad, and this is
+ * what they are carved from. Every leaker passed in MUST have a result in `results`.
+ * @param {import('./Match.js').Match} m
+ * @param {Map<string, object>} results playerId → BattleResult.perPlayer entry
+ * @param {any[]} leakers
+ * @returns {{ leaked: object[], notReentered: Map<string, number> }}
+ */
+export function carveSquadLeaks(m, results, leakers) {
+  const leaked = [];
+  const notReentered = new Map();
+  for (const ps of leakers) {
+    const r = results.get(ps.playerId);
+    for (const l of (r && r.leaked) || []) {
+      if (!l || l.counted === false) continue;
+      if (!m.gd.enemy(l.enemyKey)) { notReentered.set(ps.playerId, (notReentered.get(ps.playerId) || 0) + 1); continue; }
+      const bountyId = l.mods && l.mods.bountyId;
+      const b = bountyId ? ps.bounties.find((x) => x.id === bountyId) : null;
+      const card = b && b.card;
+      let bounty = card && card.payout !== 'perfect' && Number(card.coin) > 0 && l.enemyKey === card.enemyKey
+        ? { coins: Math.trunc(Number(card.coin)), ownerPlayerId: ps.playerId } : null;
+      const extra = !bountyId && l.mods ? Math.trunc(Number(l.mods.bountyCoins) || 0) : 0;
+      if (!bounty && extra > 0) bounty = { coins: extra, ownerPlayerId: ps.playerId };
+      leaked.push({ enemyKey: l.enemyKey, mods: l.mods ? { ...l.mods } : null, lpr: l.lpr ?? 1, sourcePlayerId: ps.playerId, tag: l.tag ?? null, bounty });
+    }
+  }
+  return { leaked, notReentered };
 }
 
 /** Whether a squad has anything to defend at all (used by the phase to decide whether it starts a field). */
