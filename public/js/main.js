@@ -73,7 +73,7 @@ import { SupportHost } from './screens/support.js';
 import { StatsHost } from './screens/stats.js';
 import { installRehearsal } from './battle/rehearsal.js';
 import { recordResult, installStatsRecorder } from './ui/stats.js';
-import { installLoadoutSync, installOwnershipSync, installDiySync } from './ui/loadoutSync.js';
+import { installLoadoutSync, installOwnershipSync, installDiySync, installSkinsSync } from './ui/loadoutSync.js';
 import { installSupportSync } from './ui/supportSync.js';
 import { startBuildGuard } from './ui/buildGuard.js';
 import { initLang, useLang, tickerText } from './ui/lang.js';
@@ -583,6 +583,9 @@ async function boot() {
   installSupportSync({ net });
   installOwnershipSync({ net });
   installDiySync({ net });
+  // [local-patch 2026-10-21] 干员皮肤同步（docs/SKINS.md）： skins.js 的选择器只写本机 skinsStore，没有这条接线
+  // 时 room.skins 永远不会发出 —— 服务器（session/seat/match）看不到任何皮肤，局内永远原皮。upstream 漏接线。
+  installSkinsSync({ net });
   // the room's cosmetic plugins and the player's own over the art manifest (content.js; nothing is fetched without them)
   installContent({ toast });
   // a room with gameplay plugins: its content set downloaded, checked and shown (content.js — DESIGN §34.6)
