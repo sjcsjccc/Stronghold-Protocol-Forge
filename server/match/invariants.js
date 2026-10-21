@@ -33,6 +33,7 @@ import { PHASE, BOND_LAYER_CAP } from '../../shared/constants.js';
 import { morphSlotPolicy, ruleOption } from '../../shared/plugins/rules.js';
 import { FIELD, canPlace, placeClass, positionClass, parseKey } from './board.js';
 import { computeBonds } from './bondsMeta.js';
+import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squad pool grouping
 // 装备位语义（第 7 段）：不变量里「占几格 / 最多几件 / 最多一件变形同构体」读这一局的策略（缺省档 = 官方那条算术）。
 import { matchSlotPolicy, morphPairingOf } from '../../shared/morph.js';
 
@@ -240,24 +241,32 @@ export function collectViolations(m, { limit = 25 } = {}) {
   } else {
     // 100-seat variant: the shared pool is the canonical CATALOG — its `entries` are the authoritative id set and its
     // caps the copy ceilings (audit.js, platform.js, the shop), but no copies are taken from it, so only its balance
-    // bound is checked here. Every piece's copies are conserved against ITS OWNER's pool (PlayerState.poolOf is the one
-    // dispatch point), which is the same equation the branch above applies room-wide.
+    // bound is checked here. Every piece's copies are conserved against ITS OWNER'S SQUAD's pool ([local-patch
+    // 2026-10-21] 4 人一组共享，组间独立 — PlayerState.poolOf is still the one dispatch point), which is the same
+    // equation the branch above applies room-wide. m._squadPools is READ only: this checker must never build a pool.
     for (const [base, e] of m.pool.entries) {
       if (!(Number.isInteger(e.left) && e.left <= e.cap)) fail(`pool ${base}: balance ${e.left} cap ${e.cap}`);
     }
+    const squadHeld = new Map(); // squad → { pool, held: Map<base, copies> }
     for (const ps of m.players.values()) {
+      const k = Number.isInteger(ps.seat) && ps.seat >= 0 ? Math.floor(ps.seat / SQUAD_SIZE) : -1;
+      const own = (m._squadPools && m._squadPools.get(k)) || null;
       const mine = heldOf.get(ps.playerId) || null;
-      const own = ps._ownPool || null;
       if (!own) {
         if (mine) for (const [base, n] of mine) if (n !== 0) fail(`${ps.playerId}: holds ${n} copies of ${base} with no pool of its own`);
         continue;
       }
+      const g = squadHeld.get(k);
+      if (g) { for (const [base, n] of mine || []) g.held.set(base, (g.held.get(base) || 0) + n); }
+      else squadHeld.set(k, { pool: own, held: new Map(mine || []) });
+    }
+    for (const [k, { pool: own, held: sheld }] of squadHeld) {
       for (const [base, e] of own.entries) {
-        if (!(Number.isInteger(e.left) && e.left <= e.cap)) fail(`${ps.playerId} pool ${base}: balance ${e.left} cap ${e.cap}`);
-        const h = mine ? mine.get(base) || 0 : 0;
-        if (e.left + h !== e.cap) fail(`${ps.playerId} pool ${base}: left ${e.left} + held ${h} != cap ${e.cap}`);
+        if (!(Number.isInteger(e.left) && e.left <= e.cap)) fail(`squad ${k} pool ${base}: balance ${e.left} cap ${e.cap}`);
+        const h = sheld.get(base) || 0;
+        if (e.left + h !== e.cap) fail(`squad ${k} pool ${base}: left ${e.left} + held ${h} != cap ${e.cap}`);
       }
-      if (mine) for (const [base, n] of mine) if (n !== 0 && !own.has(base)) fail(`${ps.playerId}: non-pool chess ${base} holds ${n} copies`);
+      for (const [base, n] of sheld) if (n !== 0 && !own.has(base)) fail(`squad ${k}: non-pool chess ${base} holds ${n} copies`);
     }
   }
 

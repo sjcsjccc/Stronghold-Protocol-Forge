@@ -171,6 +171,8 @@ export class GameData {
     // 乘数按它缩放（poolCopies）——官方 ×2 是 4 人房的实测校准，超编房保持同样的「2 名玩家 / 1× 库存」密度。
     // 没传（Studio / 测试等旧调用方）⇒ `null`，poolCopies 走官方行为，一个字节都不动。
     this.matchPlayers = Number.isInteger(opts?.players) && opts.players >= 1 ? opts.players : null;
+    // [local-patch 2026-10-21] 每个牌池实际共享的人数：变体局 = 一个小队的 4 席；缺省回落到开局人数。
+    this.poolShare = Number.isInteger(opts?.poolShare) && opts.poolShare >= 1 ? opts.poolShare : null;
     this.economy = this.config.economy && typeof this.config.economy === 'object' ? this.config.economy : {};
     const chess = this.raw.chess && typeof this.raw.chess === 'object' ? this.raw.chess : {};
     this._chess = chess;
@@ -455,7 +457,10 @@ export class GameData {
     // 行为），超出后按 ceil(开局人数 / 2) 增长——正好延续官方「4 名玩家吃 2× 库存」的每人均衡（2 名玩家 /
     // 1× 库存），20 座房开局即 10×，卡池不再被超编的 shopper 抢穿。Solo 恒 1×；没传开局人数的调用方走官方值。
     const configured = posIntOr(this.economy.coopPoolMultiplier, 1);
-    const scaled = this.matchPlayers ? Math.ceil(this.matchPlayers / 2) : 0;
+    // [local-patch 2026-10-21] 密度按「实际共享这张池的人数」：变体局传 poolShare（一个小队 4 席 ⇒ 官方 2×），
+    // 缺省回落到开局人数（≤4 人局的共享池，公式对它们本就恒等于官方 2×）。
+    const share = this.poolShare ?? this.matchPlayers;
+    const scaled = share ? Math.ceil(share / 2) : 0;
     const multiplier = this.isSolo ? 1 : Math.max(configured, scaled);
     return base * multiplier;
   }

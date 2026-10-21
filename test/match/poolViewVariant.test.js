@@ -24,6 +24,15 @@ test('卡池面板 (variant >4): the panel follows the requester pool, buying mo
   assert.ok(view && view.pool && view.pool[id], 'the panel carries the entry');
   assert.equal(view.pool[id].left, before - 2, 'the panel shows the player own stock, live');
   assert.equal(view.pool[id].cap, ps.mainPool().cap(id));
+
+  // per-SQUAD sharing ([local-patch 2026-10-21]): seats 0..3 share one pool, seat 4 has its own
+  const mate = m.players.get('p_1');
+  const other = m.players.get('p_4');
+  assert.equal(ps.mainPool(), mate.mainPool(), 'squad mates draw from one pool');
+  assert.notEqual(ps.mainPool(), other.mainPool(), 'another squad pool is independent');
+  m.poolView(mate);
+  assert.equal(h.lastTo('p_1', 'm.pool').pool[id].left, before - 2, 'the squad mate sees the same stock');
+  assert.equal(other.mainPool().left(id), before, 'the other squad copies are untouched');
   m.dispose();
 });
 

@@ -205,6 +205,7 @@
 //                    fail, BOSS_CLOCK_MS)
 
 import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS } from '../../shared/constants.js';
+import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squad pool sharing width
 // 变体 / 口径层（DESIGN §28.39）：本局的轴表由各包的归一化声明合成，规则就是既有的「包 id 字典序小的赢」。
 import { mergeVariantDecls, variantValue } from '../../shared/variants.js';
 // 行为开关层（DESIGN §28.43）：同一张合成规则（包 id 小的赢），另一张表。空数组 ⇒ 每一格的读取点走缺省路径。
@@ -355,6 +356,9 @@ export class Match {
       // [local-patch 2026-10-20] 开局人数（opts.seats：真人 + AI，第 289 行已保证非空数组）：gamedata.js
       // poolCopies 的卡池乘数按它缩放——20 座房开局 10× 库存，4 人及以下仍是官方 2×。
       players: opts.seats.length,
+      // [local-patch 2026-10-21] 牌池共享口径：变体局（>4 参战者）每个牌池由一个小队（4 席）共享 ⇒ 密度按 4 人
+      // 算 = 官方 4 人房的 2×；≤4 人局仍按开局人数（公式对它们本就恒等于官方 2×）。
+      poolShare: opts.seats.length > MAX_SEATS ? SQUAD_SIZE : opts.seats.length,
       // 本局的口径（DESIGN §28.39）。空数组 = 没有包声明口径 ⇒ `GameData` 一个字节都不动。
       variants: this.variants,
       // 本局的行为开关（DESIGN §28.43.1）：prep 侧的 `pieceBonds` 从这一份读取视图里读 `morphPairing`。

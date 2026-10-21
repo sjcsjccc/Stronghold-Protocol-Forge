@@ -25,7 +25,7 @@
 // the player state).
 
 import { SharedPool } from '../pool.js';
-import { squadIndexOf, squadPeersOf } from '../unite100.mjs';
+import { squadIndexOf, squadPeersOf, SQUAD_SIZE } from '../unite100.mjs';
 
 export class PlayerRules {
   /**
@@ -40,18 +40,24 @@ export class PlayerRules {
   variantOn() { return this.m.variant === true; }
 
   /**
-   * This player's own pool — the full original copy count of every non-banned base chess, built from the MATCH's
-   * canonical catalog. Built lazily and kept for the match: taking copies from it must never leak into `m.pool`.
-   * `support` is mirrored from the match's own pool so an operator this room brought as 助战 stays purchasable here too
+   * This player's pool — shared by its SQUAD ([local-patch 2026-10-21] 业主裁令：**4 人一组共享，组与组之间独立**，
+   * 替换百卫原设计的每人一池；≤ MAX_SEATS 参战者不读这里)。Cached on the MATCH keyed by the seat's squad
+   * (unite100's SQUAD_SIZE): squad mates draw from — and drain — ONE pool, another squad's copies are never touched.
+   * Built lazily from the MATCH's canonical catalog; taking copies from it must never leak into `m.pool`. `support`
+   * is mirrored from the match's own pool so an operator this room brought as 助战 stays purchasable here too
    * (shared/support.js: banning a shop roll must not disable a support) — dropping it would delete a feature in the
    * variant.
    * @returns {SharedPool}
    */
   pool() {
-    if (!this._ownPool) {
-      this._ownPool = new SharedPool(this.m.gd, { banned: this.m.bannedChess || [], support: this.m.supportSupply || [] });
+    const k = squadIndexOf(this.seat);
+    const cache = this.m._squadPools || (this.m._squadPools = new Map());
+    let p = cache.get(k);
+    if (!p) {
+      p = new SharedPool(this.m.gd, { banned: this.m.bannedChess || [], support: this.m.supportSupply || [] });
+      cache.set(k, p);
     }
-    return this._ownPool;
+    return p;
   }
 
   /**

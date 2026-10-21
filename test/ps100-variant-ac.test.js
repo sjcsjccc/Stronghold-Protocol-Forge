@@ -81,33 +81,36 @@ test('A gate OFF (≤ MAX_SEATS): poolOf and mainPool hand back the identical sh
   m.dispose();
 });
 
-test('A gate ON (> MAX_SEATS): one pool per player, the shared catalog keeps every copy, per-player conservation holds', () => {
+test('A gate ON (> MAX_SEATS): one pool per SQUAD ([local-patch 2026-10-21] 4 人一组共享，组间独立), the shared catalog keeps every copy, conservation holds', () => {
   const h = makeMatch({ mode: 'coop', humans: 6, seed: 12, fake: true }).start();
   const m = h.m;
   h.toPrep(1);
   assert.equal(m.seatCap, 6);
   const a = h.ps('p_0');
   const b = h.ps('p_1');
+  const c = h.ps('p_4'); // seats 4..5 = squad 1
   assert.equal(a.variantOn(), true);
   assert.equal(a.mainPool(), a.pool());
   assert.notEqual(a.mainPool(), m.pool, 'the draw source is no longer the shared pool');
-  assert.notEqual(a.mainPool(), b.mainPool(), 'one pool per player');
+  assert.equal(a.mainPool(), b.mainPool(), 'squad mates (seats 0..3) share ONE pool');
+  assert.notEqual(a.mainPool(), c.mainPool(), 'another squad drafts from its own pool');
 
   const base = chessOfTier(1).filter((x) => m.pool.has(x))[0];
   const cap = m.gd.poolCopies(base);
   assert.ok(cap > 0);
-  assert.equal(a.poolOf(base), a.mainPool(), 'poolOf routes to the player own pool');
+  assert.equal(a.poolOf(base), a.mainPool(), 'poolOf routes to the squad pool');
 
   const piece = a.acquireChess(base, { source: 'test', silent: true });
   assert.ok(piece, 'the chess was acquired');
-  assert.equal(a.pool().left(base), cap - 1, 'the copy came out of the player own pool');
+  assert.equal(a.pool().left(base), cap - 1, 'the copy came out of the squad pool');
+  assert.equal(b.pool().left(base), cap - 1, 'the squad mate sees the same drain');
   assert.equal(m.pool.left(base), m.pool.cap(base), 'the shared catalog is untouched');
-  assert.equal(b.pool().left(base), cap, 'another player pool is untouched');
-  assert.deepEqual(collectViolations(m), [], 'per-player conservation holds after a take');
+  assert.equal(c.pool().left(base), cap, 'another SQUAD pool is untouched');
+  assert.deepEqual(collectViolations(m), [], 'per-squad conservation holds after a take');
 
   // ... and the return trip goes back to the SAME pool
   assert.ok(a.sell(piece.uid), 'sold back');
-  assert.equal(a.pool().left(base), cap, 'the copy went back to the player own pool');
+  assert.equal(a.pool().left(base), cap, 'the copy went back to the squad pool');
   assert.equal(m.pool.left(base), m.pool.cap(base), 'still untouched');
   assert.deepEqual(collectViolations(m), []);
 
@@ -136,7 +139,7 @@ test('A: the per-player conservation is LIVE — a corrupted own pool is reporte
   assert.deepEqual(collectViolations(m), []);
   a.pool().entries.get(base).left -= 1;        // one copy vanished: left + held != cap
   const bad = collectViolations(m);
-  assert.ok(bad.some((v) => v.startsWith('p_0 pool ') && v.includes(base)), `expected a per-player pool violation, got ${JSON.stringify(bad)}`);
+  assert.ok(bad.some((v) => v.startsWith('squad 0 pool ') && v.includes(base)), `expected a per-squad pool violation, got ${JSON.stringify(bad)}`);
   a.pool().entries.get(base).left += 1;
   assert.deepEqual(collectViolations(m), []);
   // the ROOM-WIDE equation is not the one that runs here: draining the shared catalog is not a violation in this mode

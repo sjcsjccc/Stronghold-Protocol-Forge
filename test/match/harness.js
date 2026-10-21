@@ -29,6 +29,7 @@ import { FIELD, canPlace, placeClass, positionClass, tileKey } from '../../serve
 import { FakeBattle } from './fakeBattle.js';
 import { GEO, MAX_SEATS } from '../../shared/constants.js';
 import { collectViolations } from '../../server/match/invariants.js';
+import { SQUAD_SIZE } from '../../server/match/unite100.mjs';
 import { attachSimClients } from './simClient.js';
 import { applyPublic } from '../../public/js/matchDelta.js';
 import { morphSlotPolicy, ruleOption } from '../../shared/plugins/rules.js';
@@ -336,16 +337,26 @@ function legacyInvariants(m) {
       assert.ok(Number.isInteger(e.left) && e.left <= e.cap, `pool ${base} balance ${e.left} cap ${e.cap}`);
       assert.equal(pool.left(base), Math.max(0, e.left), 'overdrawn ownership never becomes a negative shop supply');
     }
+    // [local-patch 2026-10-21] per-SQUAD pools (4 人一组共享，组间独立): the same two checks grouped by the seat's
+    // squad against its shared pool (m._squadPools read only — never built here).
+    const squadHeld = new Map();
     for (const ps of m.players.values()) {
-      const own = ps._ownPool;
+      const k = Number.isInteger(ps.seat) && ps.seat >= 0 ? Math.floor(ps.seat / SQUAD_SIZE) : -1;
+      const own = (m._squadPools && m._squadPools.get(k)) || null;
       if (!own) continue;
       const mine = heldOf.get(ps.playerId) || null;
+      const g = squadHeld.get(k);
+      if (g) { for (const [base, n] of mine || []) g.held.set(base, (g.held.get(base) || 0) + n); }
+      else squadHeld.set(k, { pool: own, held: new Map(mine || []) });
+    }
+    for (const [k, { pool: own, held: sheld }] of squadHeld) {
       for (const [base, e] of own.entries) {
-        assert.ok(Number.isInteger(e.left) && e.left <= e.cap, `${ps.playerId} pool ${base} balance ${e.left} cap ${e.cap}`);
+        assert.ok(Number.isInteger(e.left) && e.left <= e.cap, `squad ${k} pool ${base} balance ${e.left} cap ${e.cap}`);
         assert.equal(own.left(base), Math.max(0, e.left), 'overdrawn ownership never becomes a negative shop supply');
-        assert.equal(e.left + (mine ? mine.get(base) || 0 : 0), e.cap, `${ps.playerId} pool accounting ${base}: left ${e.left} + held ${mine ? mine.get(base) || 0 : 0} != cap ${e.cap}`);
+        const h = sheld.get(base) || 0;
+        assert.equal(e.left + h, e.cap, `squad ${k} pool accounting ${base}: left ${e.left} + held ${h} != cap ${e.cap}`);
       }
-      if (mine) for (const [base, n] of mine) if (!own.has(base)) assert.equal(n, 0, `${ps.playerId}: non-pool chess ${base} holds copies`);
+      for (const [base, n] of sheld) if (!own.has(base)) assert.equal(n, 0, `squad ${k}: non-pool chess ${base} holds copies`);
     }
   }
   return true;
