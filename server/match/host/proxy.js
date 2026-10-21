@@ -43,7 +43,9 @@ const noopLog = { info() {}, warn() {}, error() {}, debug() {} };
 /** The lobby options a worker can take (JSON-safe: no callbacks, no data, no class). */
 export function wireOptions(opts) {
   const out = {};
-  for (const k of ['roomCode', 'mode', 'difficulty', 'modeId', 'aiPicksLast', 'seats', 'spectators', 'seed', 'matchNo', 'cs', 'vs', 'requireCs', 'kitted']) {
+  // hostId rides along ([local-patch 2026-10-21] 房主对局倍速 g.matchSpeed checks `match.hostId` — a plugin match
+  // whose worker payload dropped it had hostId null in the sandbox, so the host's speed request died on NOT_HOST).
+  for (const k of ['roomCode', 'mode', 'difficulty', 'modeId', 'aiPicksLast', 'seats', 'spectators', 'seed', 'matchNo', 'cs', 'vs', 'requireCs', 'kitted', 'hostId']) {
     if (opts[k] !== undefined) out[k] = opts[k];
   }
   // A test room must arrive as a test match. Forwarding these only when the flag is set keeps every other
@@ -127,10 +129,10 @@ export class MatchProxy {
   onLeave(playerId) { this._notify('onLeave', [playerId]); }
   /**
    * Host migration. A normal plugin match never posted setHost (the proxy had no such method, so lobby
-   * callMatch no-op'd). Only a test match follows the new host, because g.test checks hostId in the worker.
+   * callMatch no-op'd); it does since [local-patch 2026-10-21] — a migrated host must be able to run
+   * g.matchSpeed / anything else that checks `match.hostId` in the worker, exactly like g.test always did.
    */
   setHost(playerId) {
-    if (this.opts.test !== true) return;
     this.opts.hostId = typeof playerId === 'string' ? playerId : null;
     this._notify('setHost', [playerId]);
   }
