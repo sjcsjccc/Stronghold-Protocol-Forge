@@ -129,8 +129,11 @@ export class MatchIntents {
    * @param {PlayerState} ps
    */
   poolView(ps) {
+    // [local-patch 2026-10-21] read the REQUESTER's own pool (PlayerRules.mainPool): in the > MAX_SEATS variant every
+    // player draws from a per-player pool and `m.pool` is only the canonical catalog — showing it here froze the
+    // counts (the user report: 买了卡面板数字不动). ≤ MAX_SEATS mainPool() returns m.pool, unchanged.
     const pool = {};
-    for (const [baseId, e] of this.pool.entries) {
+    for (const [baseId, e] of ps.mainPool().entries) {
       if (!e || !(e.cap > 0)) continue;
       pool[baseId] = { cap: e.cap, left: Math.max(0, e.left), ...(e.support ? { support: true } : {}) };
     }
