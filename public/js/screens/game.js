@@ -244,9 +244,7 @@ function MatchScreen() {
   const [emoteOpen, setEmoteOpen] = useState(false);
   // [local-patch 2026-10-22] the in-match chat panel (ui/chatBox.js): the gear below owns the open state
   const [chatOpen, setChatOpen] = useState(false);
-  // [local-patch 2026-10-22] 超限词条抉择（只在 TRAIT_DRAFT 阶段有值）
-  const traitDraft = phase === PHASE.TRAIT_DRAFT ? (pub?.trait || null) : null;
-  const [traitBusy, setTraitBusy] = useState(null);
+  const [traitBusy, setTraitBusy] = useState(null); // [local-patch 2026-10-22] 超限词条抉择的按卡 busy
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   // 战斗倍速（顶栏那个 ×1/×2/×3/×4）：**纯本地播放选择** —— 同一段确定的 tick 序列只是推进得更快，
@@ -989,6 +987,9 @@ function MatchScreen() {
   const specBubbles = specFacts.list?.length && bubbles.size
     ? specFacts.list.filter((s) => s && bubbles.has(s.playerId)).map((s) => ({ ...bubbles.get(s.playerId), name: s.name }))
     : null;
+
+  // [local-patch 2026-10-22] 超限词条抉择（只在 TRAIT_DRAFT 阶段有值）
+  const traitDraft = phase === PHASE.TRAIT_DRAFT ? (pub?.trait || null) : null;
 
   // [local-patch 2026-10-22] AI 队友的彩蛋弹幕（battle/aiDanmakuEvents.js）：盟约层数名言跟着公开帧走，联防的
   // 吐槽/祝贺跟着阶段与结算走。管理器自己按「一局一次 / 一回合一次」去重，重进对局界面即重置（新一局重新武装）。
