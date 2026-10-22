@@ -123,6 +123,8 @@ export class GameData {
    *        与这一局的 `DataSource` **共用同一份**（两边分叉就是 bug）。不给 ⇒ 由 `variants` 自己建一份（等价）。
    */
   constructor(data, modeId, opts = {}) {
+    // [local-patch 2026-10-22] 超限模拟（Match 构造时按房间模式点亮）：R1–R15 用绝境曲线、Boss 轮时限递增
+    this.overlimit = false;
     this.raw = data && typeof data === 'object' ? data : {};
     this.config = getConfig(this.raw) || {};
     this.modeId = modeId;
@@ -568,7 +570,23 @@ export class GameData {
   bossLevelTime(r) {
     const rc = this.roundCfg(r);
     const v = rc ? rc.levelMaxPlayTime : undefined;
-    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+    // [local-patch 2026-10-22] 业主 2026-10-20：超限的 Boss 轮（R20/25/30…）在 config 里没有自己的回合行，
+    // bossLevelTime 返回 null → deadline=0 → 顶部没有倒计时。沿用 R14 最终攻势的 120 秒，每往后一档 +10 秒。
+    if (this.overlimit) {
+      const base = this.bossLevelTimeBase();
+      if (!(base > 0)) return null;
+      const step = Math.max(0, Math.floor((r - 20) / 5));
+      return base + step * 10;
+    }
+    return null;
+  }
+
+  /** [local-patch 2026-10-22] 超限 Boss 轮的基准时限：取最终攻势那一关的 levelMaxPlayTime（config rounds[bossRound]）。 */
+  bossLevelTimeBase() {
+    const rc = this.roundCfg(this.bossRound || 14);
+    const v = rc ? rc.levelMaxPlayTime : undefined;
+    return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 120;
   }
 
   /**
@@ -577,7 +595,12 @@ export class GameData {
    * `enemy_exclude` leaves out the 14 器物 hit-count keys — they take hpMul / supplyHpMul (archetypes.js `times`).
    */
   baseEnemyScale(r) {
-    const e = this.mode.enemyScale && this.mode.enemyScale[String(r)];
+    // [local-patch 2026-10-22] 超限模拟的 R1–R15 用**绝境**的数值曲线（业主 2026-10-19）：HARD 的曲线每 4 回合
+    // 跳一档、R1 只有 ×0.8，打起来前 15 回合几乎不涨；绝境是 R1 ×1.2、几乎每回合都在涨，才配得上「超限」。
+    const table = this.overlimit
+      ? (this.config?.modes?.mode_single_abyss?.enemyScale || this.mode.enemyScale)
+      : this.mode.enemyScale;
+    const e = table && table[String(r)];
     if (!e || typeof e !== 'object') return { hpMul: 1, atkMul: 1, speedMul: 1 };
     const supply = numOr(e.supplyHp, 1);
     return {

@@ -28,7 +28,7 @@ const frames = (h, id) => h.sent.filter(([pid]) => pid === id).map(([, x]) => x)
 /** The intents a player has, refused for a spectator (the platform never routes them; the match refuses them too). */
 const REFUSED = [
   { t: 'g.infoReady' }, { t: 'g.buy', slot: 0 }, { t: 'g.refresh' }, { t: 'g.levelUp' }, { t: 'g.ready', ready: true },
-  { t: 'g.emote', id: EMOTES[0] }, { t: 'g.autoplay', on: true }, { t: 'g.unitStats', seq: 1 }, { t: 'g.choice', idx: 0 },
+  { t: 'g.autoplay', on: true }, { t: 'g.unitStats', seq: 1 }, { t: 'g.choice', idx: 0 },
   { t: 'g.band', bandId: 'band_bldsk' }, { t: 'b.progress', battleId: 'x', gt: 1, killed: 0, total: 1 },
 ];
 
@@ -41,7 +41,11 @@ test('a spectator seat watches a whole match (各自行动, 联防, 最终攻势
   const m = h.m;
   h.autoHumans();
   assert.ok(m.spectators.has(S) && !m.players.has(S), 'a spectator, never a player');
+  // [local-patch 2026-10-22] g.emote left the refusals: a spectator seat emotes (its own cooldown on the match)
   for (const msg of REFUSED) assert.deepEqual(m.handle(S, msg), { error: ERR.SPECTATOR }, msg.t);
+  assert.deepEqual(m.handle(S, { t: 'g.emote', id: EMOTES[0] }), { ok: true });
+  assert.ok(h.bc.some((x) => x.t === 'm.emote' && x.playerId === S), 'the room hears the spectator\'s emote');
+  assert.deepEqual(m.handle(S, { t: 'g.emote', id: EMOTES[0] }), { error: ERR.RATE }, 'the match clock cooldown');
   h.toPrep(1);
   for (const msg of REFUSED) assert.deepEqual(m.handle(S, msg), { error: ERR.SPECTATOR }, msg.t);
   // prep: a player's board, like a teammate scouting it (m.field prep: true)

@@ -204,7 +204,9 @@
 //   common.js        what the modules share (FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS — re-exported here, OK,
 //                    fail, BOSS_CLOCK_MS)
 
-import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS } from '../../shared/constants.js';
+import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS, setBondLayerCap } from '../../shared/constants.js';
+import { MatchTraitDraft } from './match/traitDraft.js'; // [local-patch 2026-10-22] 超限模拟的「词条抉择」阶段
+import { isSoloRoomMode, SOLO_INFINITE, INFINITE_BOND_LAYER_CAP } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-22]
 import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squad pool sharing width
 // 变体 / 口径层（DESIGN §28.39）：本局的轴表由各包的归一化声明合成，规则就是既有的「包 id 字典序小的赢」。
 import { mergeVariantDecls, variantValue } from '../../shared/variants.js';
@@ -293,7 +295,8 @@ export class Match {
     }
     this.opts = opts;
     this.roomCode = opts.roomCode ?? '----';
-    this.mode = opts.mode === 'solo' ? 'solo' : 'coop';
+    // [local-patch 2026-10-22] `solo_infinite`（超限模拟）is a solo room mode: it plays alone on the single curve
+    this.mode = isSoloRoomMode(opts.mode) ? 'solo' : 'coop';
     this.difficulty = opts.difficulty;
     this.modeId = opts.modeId || modeIdFor(this.mode, opts.difficulty);
     this.seed = (Number(opts.seed) >>> 0) || 1;
@@ -390,6 +393,16 @@ export class Match {
     this.offerSeq = 0;
     if (!this.difficulty) this.difficulty = this.gd.difficulty;
     this.isSolo = this.mode === 'solo' || this.gd.isSolo;
+    /**
+     * [local-patch 2026-10-22] 超限模拟（房间 mode = `solo_infinite`，shared/infiniteMode.js 的 SOLO_INFINITE）。
+     * 按房间模式点亮它；别的模式一律 false，所以不会有任何超限规则漏进普通单机 / 同盟。
+     */
+    this.isInfinite = opts.mode === SOLO_INFINITE;
+    // 超限的 R1–R15 用绝境的数值曲线（gamedata.baseEnemyScale）
+    if (this.gd) this.gd.overlimit = this.isInfinite;
+    // 超限局把盟约层数上限抬到 9999（普通模式仍是 999）。恢复放在 platform dispose 里，
+    // 用「上一局的值」而不是常量，避免嵌套/并发时把别的对局的设置冲掉。
+    this._bondCapPrev = this.isInfinite ? setBondLayerCap(INFINITE_BOND_LAYER_CAP) : null;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
     /**
@@ -723,7 +736,7 @@ export class Match {
 }
 
 // the method modules, in this order (a name defined twice is an error, never a silent override)
-for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchSpDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchTestCommands, MatchOffers]) {
+for (const part of [MatchPlatform, MatchInfra, MatchMessaging, MatchViews, MatchWatch, MatchIntents, MatchPause, MatchPhases, MatchSetupVote, MatchSpDraft, MatchTraitDraft, MatchPrep, MatchCombat, MatchClientCombat, MatchRehearsal, MatchReports, MatchUnite, MatchBoss, MatchSettle, MatchTestCommands, MatchOffers]) {
   for (const key of Reflect.ownKeys(part.prototype)) {
     if (key === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Match.prototype, key)) throw new Error(`Match.${String(key)} is defined twice`);

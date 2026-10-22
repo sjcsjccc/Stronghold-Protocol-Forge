@@ -217,9 +217,11 @@ function ModePill({ r }) {
   const d = r.difficulty;
   if (!d) return null;
   const key = String(d).toLowerCase();
-  return html`<span class=${cx('smode', `smode--${key}`)} style=${`--d-color:${DIFFICULTY_COLORS[d] || 'var(--text-lo)'}`}>
+  return html`<span class=${cx('smode', `smode--${key}`, r.isInfinite && 'is-infinite')} style=${`--d-color:${DIFFICULTY_COLORS[d] || 'var(--text-lo)'}`}>
     <${Sprite} k=${`settle/mode_${key}`} class="smode__bg" fallback=${html`<span class="smode__bg smode__bg--css"><${DifficultyIcon} difficulty=${d} /></span>`} />
     <b class="smode__name">${DIFFICULTY_NAMES[d] ? t(DIFFICULTY_NAMES[d]) : d}</b>
+    ${/* [local-patch 2026-10-22] 超限模拟的结算徽记 */
+    r.isInfinite ? html`<span class="smode__inf">${t('超限模拟')}</span>` : null}
   </span>`;
 }
 

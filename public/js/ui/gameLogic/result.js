@@ -44,7 +44,9 @@ export function normalizeResult(res, pub) {
   return {
     victory: !!r.victory,
     roundsPassed: Number.isFinite(r.roundsPassed) ? r.roundsPassed : Math.max(0, ...players.map((p) => p.roundsPassed), 0),
-    lastRound: Number.isFinite(r.lastRound) ? r.lastRound : (Number.isFinite(pub?.lastRound) ? pub.lastRound : 14),
+    // [local-patch 2026-10-22] 超限：lastRound 不存在（无限轮次），isInfinite 随载荷走
+    lastRound: Number.isFinite(r.lastRound) ? r.lastRound : (r.isInfinite || pub?.isInfinite ? null : Number.isFinite(pub?.lastRound) ? pub.lastRound : 14),
+    isInfinite: !!(r.isInfinite || pub?.isInfinite),
     hiddenCleared: !!r.hiddenCleared,
     // the Hidden Core (R15) was fought: only then does the result show its boss medal (m.result.hiddenReached;
     // older payloads without it: a clear implies it was reached)

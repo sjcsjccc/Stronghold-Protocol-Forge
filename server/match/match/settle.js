@@ -86,6 +86,39 @@ export class MatchSettle {
         ps.layers[bondId] = before + add;
         this.dispatch(ps, 'onLayers', { bondId, from: before, to: ps.layers[bondId], reason: 'battle' });
       }
+      // [local-patch 2026-10-22] 超限词条（上游 0.3.1.1）：再起 / 苛责 按完美作战回血或扣血；共栖 / 离散 调整本回合的层数增益。
+      // 普通模式 this.traitSettleBundle 不存在 → 整段跳过。
+      const ts = this.traitSettleBundle ? this.traitSettleBundle() : null;
+      // 全 0 的 bundle 等价于「没有词条」—— 普通模式永远走这一支，行为和以前完全一致。
+      const tsActive = ts && (ts.lpOnPerfect || ts.lpOnNotPerfect || ts.layerBonus || ts.stripLayers);
+      if (tsActive) {
+        const perfect = counted === 0 && r.perfect !== false;
+        const dlp = (perfect ? ts.lpOnPerfect : 0) + (perfect ? 0 : ts.lpOnNotPerfect);
+        if (dlp) {
+          ps.lp = Math.max(0, ps.lp + dlp);
+          if (dlp > 0) ps.stats.lpGained = (ps.stats.lpGained || 0) + dlp;
+          else ps.stats.lpLost += -dlp;
+        }
+        if (ts.layerBonus) {
+          // 本回合战斗内获得的层数额外 ±1（逐条盟约）
+          for (const [bondId, n] of Object.entries(r.layerGains || {})) {
+            if (!this.gd.bond(bondId) || !(n > 0)) continue;
+            const extra = ts.layerBonus;
+            const before = ps.layers[bondId] || 0;
+            const add = layerGainRoom(before, Math.max(0, extra));
+            if (add > 0) { ps.layers[bondId] = before + add; }
+            else if (extra < 0) ps.layers[bondId] = Math.max(0, before + extra);
+          }
+        }
+        if (ts.stripLayers) {
+          // 不和：随机 N 个已激活盟约各扣 M 层
+          const ids = Object.entries(ps.layers || {}).filter(([, n]) => n > 0).map(([id]) => id);
+          this.rngMeta.shuffle(ids);
+          for (const id of ids.slice(0, ts.stripLayers.bonds)) {
+            ps.layers[id] = Math.max(0, (ps.layers[id] || 0) - ts.stripLayers.layers);
+          }
+        }
+      }
       this._charDamageTickers(ps, r);
       this.dispatch(ps, 'onBattleResult', { result: r, lpLoss: loss, perfect: counted === 0 && r.perfect !== false, unite: uniteResult || null });
       ps.recompute();
@@ -139,8 +172,37 @@ export class MatchSettle {
 
   afterSettle() {
     if (!this.alivePlayers().length) { this.finish({ victory: false, reason: 'eliminated' }); return; }
+    // [local-patch 2026-10-22] 超限：在推进之前先把「本轮 Boss 是否被清」记下来 —— startRound 会覆盖 this.wave，
+    // 之后再问就只剩下一轮的波次了（业主 2026-10-19 的「有 Boss 的普通轮次」）。
+    if (this.isInfinite) this._infBossClearedRound = this._infiniteBossCleared() ? this.round : null;
     resetRoundCounters(this); // AI bot merge-counter resets each round (server/match/botEmotes.js)
+    // [local-patch 2026-10-22] 业主 2026-10-19：「词条选择应该在 boss 轮次结束下一轮次还未进入的时点切入，
+    // 以方便下一轮就出现选择的怪」。所以先开词条抉择，**选完**再 startRound(round+1) —— 那时 traitSpawn
+    // 已经记好，下一轮的波次生成就能直接把它带出来。
+    if (this.isInfinite && this._infBossClearedRound === this.round) {
+      this._traitPendingRound = this.round + 1;
+      this._traitDoneRound = this.round;   // 标记「这个 Boss 轮的词条已经开过」
+      if (this.enterTraitDraft(this.round + 1)) return;
+    }
     this.startRound(this.round + 1);
+  }
+
+  /**
+   * [local-patch 2026-10-22] 超限的「有 Boss 的普通轮次」（上游 0.3.1.1）：这一轮刷过领袖、并且它被消灭了
+   * → 下一轮开头开词条抉择。Boss 就在普通波次里，判定是「本轮的 boss spawn 全部结算完毕
+   * （击杀或漏掉，漏了不算过）」。
+   */
+  _infiniteBossCleared() {
+    if (!this.isInfinite || !this.wave) return false;
+    const bossSpawns = (this.wave.spawns || []).filter((x) => x && x.tag === 'boss');
+    if (!bossSpawns.length) return false;
+    const keys = new Set(bossSpawns.map((x) => x.enemyKey));
+    const r = this.lastResults.get([...this.players.keys()].find((id) => this.players.get(id)?.alive));
+    if (!r) return false;
+    const leaked = new Set((r.leaked || []).filter((l) => l && l.counted !== false).map((l) => l.enemyKey));
+    // 有一只领袖漏了 → 这一轮不算通过（不给词条）
+    for (const k of keys) if (leaked.has(k)) return false;
+    return true;
   }
 
   finish({ victory, hiddenCleared = false, reason = 'defeat' }) {

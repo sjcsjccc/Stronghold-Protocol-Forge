@@ -171,7 +171,7 @@ export function BandDraftScreen() {
   const pub = useStore((s) => s.match.public);
   const priv = useStore((s) => s.match.private);
   const myId = useStore((s) => s.me.playerId);
-  const roomSolo = useStore((s) => s.room?.mode === 'solo');
+  const roomSolo = useStore((s) => s.room?.mode === 'solo' || s.room?.mode === 'solo_infinite'); // [local-patch 2026-10-22]
   const gd = useGameData();
   const [sel, setSel] = useState(null);
   const [busy, setBusy] = useState(null);

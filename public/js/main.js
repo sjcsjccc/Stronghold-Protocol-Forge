@@ -47,7 +47,8 @@ import { html, UiHosts, Button, MicroLabel, closeAllDialogs, confirmDialog } fro
 import { ConnectionBanner } from './ui/connBanner.js';
 import { ToastHost, toast, toastError, describeError } from './ui/toasts.js';
 import { net, identity, NetError } from './net.js';
-import { store, useStore, emptyMatch, selectRoute, entryGateBlocked, sessionResetNotice, isSpectating } from './store.js';
+import { store, useStore, emptyMatch, selectRoute, entryGateBlocked, sessionResetNotice, isSpectating, pushChatMessage, clearChat, roomIdentityChanged } from './store.js';
+import { getRoomDanmaku } from './ui/roomDanmaku.js';
 import { applyPublic } from './matchDelta.js';
 import { data } from './data.js';
 // 战斗读数（DESIGN §28.38）：注入给注册点的**只有** `battleRunner.damage` 一个函数（`ctx.battle.damage()`），
@@ -403,8 +404,25 @@ function wireNet() {
   net.on('replaced', () => toast(t('该身份已在其他页面登录，本页已断开'), 'warn', { ttl: 6000 }));
   net.on('unhandledError', (err) => toastError(err));
   net.on('room.state', onRoomState);
+  // [local-patch 2026-10-22] 房间与局内文字聊天 (room.chat): the server broadcasts `chat.msg` to the whole room (the
+  // spectator seat included, it just cannot speak), so the client keeps the tail (store.pushChatMessage) and shows it
+  // as a danmaku while a match is on screen (ui/roomDanmaku.js). `chat.history` (the resync's replay) only tops the log up.
+  net.on('chat.msg', (msg) => {
+    pushChatMessage(msg);
+    const st = store.get();
+    const inMatch = Boolean(st.room?.inMatch || st.screen === 'game' || st.match?.public);
+    if (!inMatch) return;
+    const myId = st.me?.playerId;
+    const isMine = Boolean((msg?.from || msg?.playerId) && myId && (msg.from ?? msg.playerId) === myId);
+    // 自己的消息在 chatBox 发送时已乐观弹出过弹幕，避免重复
+    if (!isMine) getRoomDanmaku().show({ ...msg, playerId: msg.from ?? msg.playerId }, false);
+  });
+  net.on('chat.history', (msg) => {
+    if (Array.isArray(msg?.messages)) for (const m of msg.messages) pushChatMessage(m);
+  });
   net.on('room.closed', (msg) => {
     backToLobby();
+    clearChat();
     const known = Object.hasOwn(CLOSE_REASON, String(msg.reason)) ? CLOSE_REASON[msg.reason] : null;
     toast(known ? t(known) : typeof msg.reason === 'string' && msg.reason.length < 60 ? t('同盟已关闭：{reason}', { reason: msg.reason }) : t('同盟已关闭'), 'warn');
   });
@@ -468,6 +486,9 @@ function wireNet() {
     if (s.session.entered && !prev.session.entered) { schedulePendingJoin(); schedulePendingPlaytest(); }
     // in a room (co-op or solo, also a resumed one) a match is near: its data starts downloading
     if (s.room && !prev.room) warmGameData();
+    // [local-patch 2026-10-22] leaving a room (离开同盟) does not pass room.closed: the old room's chat lines must not
+    // sit under the next room's (roomIdentityChanged also fires for room.closed — clearChat there is idempotent)
+    if (roomIdentityChanged(prev.room, s.room)) clearChat();
     // the match on screen is over (left, closed, kicked, a new session): a rehearsal task of it is dead, and the frame
     // that cancels it may never arrive (a disposed match sends nothing) — the page stops what it is running itself
     if (selectRoute(prev) === 'game' && selectRoute(s) !== 'game') rehearsal?.clear();

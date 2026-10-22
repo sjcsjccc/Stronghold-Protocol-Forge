@@ -233,8 +233,9 @@ export const DIFFICULTY_NAMES = { FUNNY: N_('标准模拟'), NORMAL: N_('险境�
 export const DIFFICULTY_COLORS = { FUNNY: '#f6a329', NORMAL: '#e85a1a', HARD: '#e73118', ABYSS: '#ff0024' };
 
 // modeId in data/config.json = `mode_${type}_${difficulty.toLowerCase()}` with type single|multi
+// [local-patch 2026-10-22] `solo_infinite`（超限模拟）shares the single-player curve: `mode_single_*`
 export const modeIdFor = (roomMode, difficulty) =>
-  `mode_${roomMode === 'solo' ? 'single' : 'multi'}_${difficulty.toLowerCase()}`;
+  `mode_${(roomMode === 'solo' || roomMode === 'solo_infinite') ? 'single' : 'multi'}_${difficulty.toLowerCase()}`;
 
 export const PHASE = Object.freeze({
   LOBBY: 'LOBBY',
@@ -249,13 +250,15 @@ export const PHASE = Object.freeze({
   SETTLE: 'SETTLE',
   FINAL_ASSAULT: 'FINAL_ASSAULT',
   HIDDEN_CORE: 'HIDDEN_CORE',
+  // [local-patch 2026-10-22] 超限模拟的「词条抉择」(server/match/match/traitDraft.js): after a cleared boss round
+  TRAIT_DRAFT: 'TRAIT_DRAFT',
   RESULT: 'RESULT',
 });
 
 export const PHASE_NAMES = {
   LOBBY: N_('等待中'), INFO_CHECK: N_('确认本局信息'), BAND_DRAFT: N_('选择策略'), BATTLE_CHECK: N_('协议启动'),
   ROUND_START: N_('回合开始'), SP_DRAFT: N_('机变阶段'), PREP: N_('休整期'), COMBAT: N_('作战中'), UNITE: N_('联防阶段'),
-  SETTLE: N_('结算'), FINAL_ASSAULT: N_('最终攻势'), HIDDEN_CORE: N_('隐秘核心'), RESULT: N_('模拟结束'),
+  SETTLE: N_('结算'), FINAL_ASSAULT: N_('最终攻势'), HIDDEN_CORE: N_('隐秘核心'), TRAIT_DRAFT: N_('词条抉择'), RESULT: N_('模拟结束'),
 };
 
 // Board geometry on the **official** 19x21 stage grid (row 0 = bottom). See DESIGN §3 and shared/layout.js.
@@ -308,13 +311,31 @@ export const SKILL_SUMMON_START_DEPLOY = true;
 export const BOND_LAYER_CAP = 999;
 
 /**
+ * 实际生效的层数上限 [local-patch 2026-10-22，上游 0.3.1.1 同款]：超限模拟里盟约层数能叠到 9999。
+ * `BOND_LAYER_CAP` 是原版（以及所有普通模式）的 999；超限局在 Match 构造时把这里抬到 9999，
+ * dispose 时恢复 —— 改动**只在一个超限局的生命周期内**，普通单机 / 同盟读到的仍是 999。
+ * 用它而不是直接改常量，是因为 `layerGainRoom` 是纯函数、被 service 与 sim 两侧共用。
+ */
+let bondLayerCapLive = BOND_LAYER_CAP;
+
+/** The cap `layerGainRoom` enforces right now (999 normally, 9999 inside an overlimit match). */
+export function currentBondLayerCap() { return bondLayerCapLive; }
+
+/** Set the live cap; returns the previous one so a caller can restore it. */
+export function setBondLayerCap(v) {
+  const prev = bondLayerCapLive;
+  bondLayerCapLive = Number.isFinite(v) && v > 0 ? Math.floor(v) : BOND_LAYER_CAP;
+  return prev;
+}
+
+/**
  * The layers a gain of `n` actually adds to a bond holding `before` under BOND_LAYER_CAP: min(n, cap − before), never
  * negative (a count already at or over the cap gains 0 and is never lowered); 0 for a non-positive / non-finite `n`
  * except +Infinity (= "the room left").
  */
 export function layerGainRoom(before, n) {
   if (!(n > 0)) return 0;
-  const cap = BOND_LAYER_CAP > 0 ? BOND_LAYER_CAP : Infinity;
+  const cap = bondLayerCapLive > 0 ? bondLayerCapLive : Infinity;
   const b = Number.isFinite(before) && before > 0 ? before : 0;
   return Math.max(0, Math.min(n, cap - b));
 }
@@ -566,3 +587,7 @@ export const emoteArtGroup = (id) => { const e = emoteInfo(id); return e ? `emot
 export const emoteArtPath = (id) => { const e = emoteInfo(id); return e ? `/assets/local/emoticon/${e.dir}/${e.picId}.png` : null; };
 export const EMOTE_COOLDOWN_MS = 1000; // activity_table autoChessData.constData.chatCD (s)
 export const EMOTE_BUBBLE_MS = 3000;   // constData.chatTime (s): how long a bubble stays up
+
+// [local-patch 2026-10-22] 超限模拟 (shared/infiniteMode.js): the room mode id, the mode check and the
+// infinite balance constants, one copy shared by both ends.
+export { SOLO_INFINITE, isInfiniteMode, isSoloRoomMode, BOSS_HIT_LIMIT_INFINITE, INFINITE_MAX_ROUND, MIN_ATTACK_INTERVAL_SEC, INFINITE_BOND_LAYER_CAP } from './infiniteMode.js';

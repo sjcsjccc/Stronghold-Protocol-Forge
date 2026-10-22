@@ -50,6 +50,10 @@ export class MatchViews {
       case PHASE.BAND_DRAFT:
         if (this.draft && this.draft.picks[ps.playerId]) return 'ready';
         return this.draft && this.draftTurn() === ps.playerId ? 'deciding' : 'acting';
+      // [local-patch 2026-10-22] 超限的「词条抉择」：选完即 ready，轮到谁谁 deciding
+      case PHASE.TRAIT_DRAFT:
+        return this.trait && this.trait.picks[ps.playerId] != null ? 'ready'
+          : (this.trait && this.traitTurn() === ps.playerId ? 'deciding' : 'acting');
       case PHASE.SP_DRAFT: {
         // the squad variant ([local-patch 2026-10-21]): the viewer's own squad's draft decides ready/deciding
         const sq = !this.sp && typeof this.spSquadOf === 'function' ? this.spSquadOf(ps) : null;
@@ -82,6 +86,21 @@ export class MatchViews {
       deadline: this.deadline,
       serverNow: this.sched.now(),
       modeId: this.modeId,
+      // [local-patch 2026-10-22] 超限模式：客户端据此知道回合数没有上限（HUD 的「隐藏核心 ?? 」判定不能拿 lastRound 卡它）
+      isInfinite: !!this.isInfinite,
+      // 战斗推进倍速（超限 R16+ 是 2）；倒计时与它无关，仍是 1 倍
+      gameSpeed: this.gameSpeed,
+      // 超限倍速开关的位置：1 = 基准速（GAME_SPEED），2 = 双倍
+      speedPref: this.isInfinite ? (this.infiniteSpeedPref || 1) : 1,
+      // 超限：已选词条（HUD 上要能看到本局拿了什么）
+      ...(this.isInfinite && Array.isArray(this.traitMods) && this.traitMods.length
+        ? {
+          traitMods: this.traitMods.map((t) => ({
+            id: t.id, name: t.name, polarity: t.polarity, round: t.round,
+            ...(typeof t.text === 'string' ? { text: t.text } : {}),
+          })),
+        }
+        : {}),
       difficulty: this.difficulty,
       stageId: this.stageId,
       setupRevision: this.setupRevision,
@@ -153,6 +172,11 @@ export class MatchViews {
         order: d.order.slice(), turn: this.draftTurn(), picks: { ...d.picks }, skipsLeft: { ...d.skipsLeft }, turnDeadline: d.turnDeadline || 0,
         turnSeconds: d.untimed ? 0 : this.bandTurnMs() / 1000, untimed: !!d.untimed,
       };
+    }
+    // [local-patch 2026-10-22] 超限的词条抉择视图（publicTraitView 形状照上游 0.3.1.1）
+    if (this.phase === PHASE.TRAIT_DRAFT && this.trait) {
+      const t = this.trait;
+      v.trait = { round: t.round, polarity: t.polarity, cards: t.cards.slice(), turn: this.traitTurn(), picks: { ...t.picks } };
     }
     if (this.phase === PHASE.SP_DRAFT && this.sp) {
       const s = this.sp;

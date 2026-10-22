@@ -10,6 +10,7 @@ import { createRng, deriveSeed } from '../../sim/rng.js';
 import { creditedKillsOf } from '../../sim/spec.js';
 import { buildBossWave, bountySpawns } from '../waves.js';
 import { pairPlayers, bossPoolHp, SharedBossPool, CreditPool, hiddenEligible, BOSS_HIT_STEPS } from '../finalAssault.js';
+import { wantsTraitDraft } from './traitDraft.js'; // [local-patch 2026-10-22]
 import { FieldRunner, HeadlessPacer, syntheticResult, BOSS_SILENCE_MS, CATCHUP_TICKS_PER_INTERVAL } from '../fields.js';
 import { FLOW_TICKER_PRIORITY, BOSS_CLOCK_MS, DELAYS } from './common.js';
 
@@ -43,12 +44,19 @@ export class MatchBoss {
     this.phase = hidden ? PHASE.HIDDEN_CORE : PHASE.FINAL_ASSAULT;
     this.lastResults = new Map();
     if (!hidden) this._openTeamLp();
-    const bossId = hidden ? this.hiddenBossId : this.bossId;
+    // [local-patch 2026-10-22] 超限的 Boss 轮由 buildInfiniteBossWave 按档位挑 Boss（R20→最弱档、R25→次档…），
+    // 而 this.bossId 是开局时定的那一个（普通模式的 R14 领袖）。两者不一致会让「场上刷出来的 Boss」和
+    // 「血池/血条对应的 Boss」是两个不同的东西 —— 业主 2026-10-19「进入第 20 轮次，boss 没有正确加载」就是这个。
+    // 超限时以波次里的那个 Boss 为准。
+    const waveBoss = this.isInfinite && !hidden && this.bossWaves && this.bossWaves[0] && this.bossWaves[0].wave
+      ? (this.bossWaves[0].wave.primaryBoss || null) : null;
+    const bossId = hidden ? this.hiddenBossId : (waveBoss || this.bossId);
     // BOSS_HIT tickers ("对敌方领袖造成的伤害超过20% / 50% / 80%"): the player's damage to THIS leader over its pool —
     // the pool's own per-player tally, one pool per boss round. stats.bossDamage (the result's 领袖伤害) adds up both
     // rounds, so it would credit the Final Assault's damage to the hidden leader ("隐藏boss还没打就出了50%播报").
     const hitSteps = new Map();
-    const pool = new SharedBossPool(bossPoolHp(this.gd, bossId, alive.length), {
+    // [local-patch 2026-10-22] 只有超限局把 round 传下去（→ bossPoolHp 才乘 Boss 血量成长）；普通模式 round 为 undefined。
+    const pool = new SharedBossPool(bossPoolHp(this.gd, bossId, alive.length, this.isInfinite ? this.round : undefined), {
       onHit: (pid, dmg) => {
         const ps = this.players.get(pid);
         if (!ps) return;
@@ -99,7 +107,7 @@ export class MatchBoss {
         routes: wave.routes,
         sharedBoss: this.bossPool,
         // the round's enemy effects for the leaders' mid-fight summons (server/sim/content/bosses.js summonMods)
-        flags: { layerGainsEnabled: false, ...this.gd.dp, enemyScale: this.gd.enemyScale(this.round) },
+        flags: { layerGainsEnabled: false, ...this.gd.dp, enemyScale: this.gd.enemyScale(this.round), ...(this.isInfinite ? { overlimit: true } : {}), ...(this.traitFlagBundle ? this.traitFlagBundle() : {}) },
         fieldId,
         enemyOverrides: wave.overrides,
         waveId: wave.templateId,
@@ -117,7 +125,13 @@ export class MatchBoss {
     this.overtimeApplied = 0;
     // HUD: the boss level's countdown (maxPlayTime, 120 real s — the battle goes on past it) and the moment the
     // overtime drain starts (150 real s), both on the field clock
-    const onClock = (realS) => this.sched.now() + Math.round(((realS * this.gd.combatTimeScale) / this.gameSpeed) * 1000);
+    // [local-patch 2026-10-22] 业主 2026-10-20：倒计时显示的永远是关卡自己的秒数（120 秒），不随 1×/2× 变；
+    // 扣血（overtime / bossTurnHpReduceTime 150 秒）也必须按**真实秒**走 —— 以前超限只改了倒计时、没改扣血，
+    // 2× 时要等 300 秒真实时间才开始扣血。现在超限把两者都按真实秒。
+    const clockDiv = this.isInfinite ? 1 : this.gameSpeed;
+    const onClock = this.isInfinite
+      ? (realS) => this.sched.now() + Math.round(realS * 1000)
+      : (realS) => this.sched.now() + Math.round(((realS * this.gd.combatTimeScale) / clockDiv) * 1000);
     const levelTime = this.gd.bossLevelTime(this.round);
     // Maintainer 2026-10-10: only teams with an AI teammate keep the extra grace after the visible countdown.
     // Freeze this choice for the fight; a disconnect / host transfer cannot change its LP clock midway.
@@ -496,7 +510,17 @@ export class MatchBoss {
    * (bossTurnHpReduceTime, gamedata.js bossOvertimeDue).
    */
   _applyOvertime(gt) {
-    const due = this.gd.bossOvertimeDue(gt, this.bossOvertimeStartReal);
+    // [local-patch 2026-10-22] 普通局的战场时钟是「游戏秒」（combatTimeScale 口径），bossOvertimeDue 直接吃它。
+    // 超限局不一样：倒计时与扣血起点都是**真实秒**（startFinalAssault 的 onClock），而战场时钟按 gameSpeed 推进
+    // （2× 时 4 游戏秒/真实秒），再拿 gt 折算会差一倍 —— 超限直接用真实时钟算。
+    const due = this.isInfinite
+      ? (() => {
+        const at = Number(this.overtimeAt) || 0;
+        const now = this.sched.now();
+        const over = at > 0 ? Math.floor((now - at) / 1000) : 0;
+        return over >= 1 ? over * this.gd.bossOvertimeDrainReal : 0;
+      })()
+      : this.gd.bossOvertimeDue(gt, this.bossOvertimeStartReal);
     if (due > this.overtimeApplied) {
       const loss = due - this.overtimeApplied;
       this.overtimeApplied = due;
@@ -555,6 +579,21 @@ export class MatchBoss {
     this.markPublic();
     this.runner = null;
     if (!hidden) {
+      // [local-patch 2026-10-22] 业主 2026-10-19：「击败无限轮次的 boss 后及时显示词条选择」——打完 Boss 直接
+      // 进下一回合并把 ROUND_START 的等待压到最短，词条卡几乎立刻弹出。先开词条，选完由 finishTraitDraft
+      // 调 startRound(下一轮)，选中的怪正好进下一轮（界面上的回合计不会先跳走）。
+      if (this.isInfinite && victory) {
+        this.later(this.scaled(800), () => {
+          this.bossPool = null;
+          if (wantsTraitDraft(this, this.round + 1)) {
+            this._traitPendingRound = this.round + 1;
+            this._traitDoneRound = this.round;
+            if (this.enterTraitDraft(this.round + 1)) return;
+          }
+          this.startRound(this.round + 1);
+        });
+        return;
+      }
       const eligible = victory && !!this.hiddenBossId && hiddenEligible(this.gd, { layerSum: this.hiddenLayerSum, teamLp: this.teamLp });
       this.later(this.scaled(DELAYS.SETTLE), () => {
         if (eligible) {
@@ -567,6 +606,14 @@ export class MatchBoss {
         }
       });
     } else {
+      // [local-patch 2026-10-22] 超限的隐秘核心打完也不结算：继续下一轮
+      if (this.isInfinite && victory) {
+        this.later(this.scaled(DELAYS.SETTLE), () => {
+          this.bossPool = null;
+          this.startRound(this.round + 1);
+        });
+        return;
+      }
       this.later(this.scaled(DELAYS.SETTLE), () => this.finish({ victory: true, hiddenCleared: victory, reason: 'victory' }));
     }
   }

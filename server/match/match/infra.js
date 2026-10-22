@@ -21,6 +21,12 @@ export class MatchInfra {
     this.log.error?.(`[match ${this.roomCode}] ${msg}`, e && e.stack ? String(e.stack).split('\n').slice(1, 4).join(' | ') : '');
   }
 
+  // [local-patch 2026-10-22] 战斗 flags 的扩展点（上游 0.3.1.1 同款，当前是恒等拷贝）：超限词条的静态修正
+  // 从这里过一道，将来要改写 flags 时不用再动每个 callsite。
+  _rmSpecFlags(flags = {}) {
+    return { ...flags };
+  }
+
   /** Schedule a guarded callback (tracked for dispose). */
   later(ms, fn) {
     if (this.disposed) return null;

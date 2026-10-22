@@ -1,0 +1,207 @@
+// public/js/ui/traitOverlay.js — 超限「词条抉择」界面（业主 2026-10-18）
+// i18n-ignore-file — 卡面里混着与服务端 traits.js 互为镜像的词条/特化文案数据表（不是界面模板）；
+// 界面那几条 chrome 文案已走 t() 且在 en.json 里。
+//
+// 只在 TRAIT_DRAFT 阶段挂载。视觉与动效来自 public/dev/trait-preview 的定稿：
+//   · 三张卡依次入场（下方 + 后仰 + 弹簧落位），线框四边依次画出，角标点亮，扫描线扫过
+//   · 环绕光带：正面荧光绿 / 负面危机合约红
+//   · 选中：瞄准镜锁定 → 另外两张赛博删除（错开 120ms）→ 全部消失后选中卡滑到正中 → 长成文件夹
+//   · 特化卡：角标直接显示词条名，卡面偏红，文件夹保持红底 + 警示斜条 + 徽记水印
+
+import { useEffect, useLayoutEffect, useRef, useState } from '../../vendor/hooks.module.js';
+import { html } from './components.js';
+import { t } from '../../../shared/i18n.js';
+
+const DEL_STAGGER = 120, DEL_FLICKER = 580, DEL_WIPE = 400, DEL_PAD = 100;
+const MOVE_MS = 620, MORPH_MS = 1500;
+
+/** 特化配置：与服务端 server/match/traits.js SPECIALS 对应（只放卡面需要的字段） */
+const SPECIAL_VIEW = {
+  reid: { title: '复仇-火与钢' /* i18n-ignore: server-side data mirror */, img: '/ui/enemy-special/enemy-reid.png' },
+  mdrock: { title: '坚甲随身Ⅲ' /* i18n-ignore: server-side data mirror */, img: '/ui/enemy-special/enemy-mdrock.png' },
+  xi: { title: '气定神闲Ⅲ' /* i18n-ignore: server-side data mirror */, img: '/ui/enemy-special/enemy-xi.png' },
+};
+
+export function TraitOverlay({ trait, myId, busyIdx = null, onPick, onRetreat = null }) {
+  const [phase, setPhase] = useState('enter');   // enter → idle → choosing → moving → folder
+  const [picked, setPicked] = useState(null);
+  const cardsRef = useRef(null);
+  const rootRef = useRef(null);
+  const timers = useRef([]);
+
+  const neg = trait?.polarity === 'neg';
+  const cards = Array.isArray(trait?.cards) ? trait.cards : [];
+  const myTurn = trait?.turn === myId;
+
+  const after = (ms, fn) => { timers.current.push(setTimeout(fn, ms)); };
+  useEffect(() => () => { for (const id of timers.current) clearTimeout(id); timers.current = []; }, []);
+
+  // 入场结束后转 idle
+  useEffect(() => {
+    const id = setTimeout(() => setPhase((p) => (p === 'enter' ? 'idle' : p)), 900 + cards.length * 120);
+    return () => clearTimeout(id);
+  }, [cards.length]);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.style.setProperty('--acc', neg ? 'var(--neg)' : 'var(--pos)');
+    root.style.setProperty('--acc-hi', neg ? 'var(--neg-hi)' : 'var(--pos-hi)');
+  }, [neg]);
+
+  const choose = (idx) => {
+    if (phase !== 'idle' || !myTurn || busyIdx != null) return;
+    setPhase('choosing');
+    setPicked(idx);
+    const list = [...(cardsRef.current?.children || [])];
+    const el = list[idx];
+    const dels = list.filter((_, i) => i !== idx);
+    // ① 选中锁定 + 落选错开删除
+    if (el) el.classList.add('is-selected');
+    dels.forEach((c, i) => {
+      c.style.setProperty('--del-delay', (i * DEL_STAGGER) + 'ms');
+      c.classList.add('is-deleting');
+    });
+    after(DEL_FLICKER, () => { for (const c of dels) c.classList.add('is-wiped'); });
+    // ② 全部删完再滑到正中
+    const lastGone = DEL_FLICKER + Math.max(0, dels.length - 1) * DEL_STAGGER + DEL_WIPE + DEL_PAD;
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      setPhase('moving');
+      const row = cardsRef.current.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      el.style.setProperty('--to-center', ((row.left + row.width / 2) - (box.left + box.width / 2)) + 'px');
+      el.classList.add('is-moving');
+      after(MOVE_MS + 60, () => {
+        // 业主 2026-10-19：滑到正中后「长成文件夹」。
+        // 2026-10-20 按 public/dev/trait-preview 的 morphToFolder 重做：
+        // 卡片脱离行流、固定定位，从原位过渡到屏幕正中的 600px 宽信息板。
+        setPhase('folder');
+        morphToFolder(el, rootRef.current);
+        after(MORPH_MS, () => onPick?.(idx));
+      });
+    };
+    let remaining = dels.length;
+    for (const c of dels) {
+      c.addEventListener('animationend', (e) => {
+        if (e.animationName === 'traitCyberWipe' && --remaining <= 0) start();
+      }, { once: true });
+    }
+    after(lastGone + 60, start);
+  };
+
+  return html`<div ref=${rootRef} class=${'traitov' + (neg ? ' traitov--neg' : '')} data-testid="trait-draft">
+    <div class="traitov__veil"></div>
+    <header class="traitov__head">
+      <div class="traitov__micro">INFINITE PROTOCOL · TRAIT</div>
+      <div class="traitov__title-row"><span class="traitov__dia"></span><h2>${t('词条抉择')}</h2><span class="traitov__dia"></span></div>
+      <div class="traitov__rule"></div>
+      <p class="traitov__sub">${t('本次为')}<b>${neg ? t('负面') : t('正面')}</b>${t('词条 · 效果立即生效并贯穿本局剩余战斗')}</p>
+    </header>
+    <div ref=${cardsRef} class=${'traitov__cards' + (phase !== 'enter' ? ' is-ready' : '')}>
+      ${cards.map((c, i) => {
+        const sp = c.special ? SPECIAL_VIEW[c.special] : null;
+        return html`<div class=${'tcard' + (neg ? ' tcard--neg' : '') + (c.special ? ' tcard--special' : '')}
+            style=${sp ? `--sigil:url("${sp.img}")` : ''} key=${i}
+            onClick=${() => choose(i)} role="button" tabindex="0">
+          <span class="tcard__ring tcard__ring--glow"></span><span class="tcard__ring"></span>
+          <span class="tcard__frame"><i class="t"></i><i class="r"></i><i class="b"></i><i class="l"></i></span>
+          <b class="tcard__brk tl"></b><b class="tcard__brk tr"></b><b class="tcard__brk bl"></b><b class="tcard__brk br"></b>
+          <span class="tcard__scan"></span>
+          ${c.special ? html`<span class="tcard__wm"></span>` : null}
+          <span class=${'tcard__tag' + (sp ? ' tcard__tag--special' : '')}>${sp ? sp.title : (neg ? t('负面词条') : t('正面词条'))}</span>
+          ${c.boss ? html`<span class="tcard__boss">BOSS</span>` : null}
+          <div class="tcard__art">
+            <span class="tcard__diamond"></span>
+            <img class="tcard__icon" src=${'/assets/enemy/icon/' + c.mob + '.png'} alt="" draggable="false" />
+          </div>
+          <div class="tcard__body">
+            <div class="tcard__mob">${c.name || ''}</div>
+            ${c.special ? html`<div class="tcard__sep tcard__sep--tight"></div>` : null}
+            ${c.special ? html`<div class="tcard__specdesc">${sp ? specialDesc(c.special) : ''}</div>` : null}
+            <div class="tcard__sep"></div>
+            <div class="tcard__traitname">${c.traitName || ''}</div>
+            <div class="tcard__trait">${c.traitText || ''}</div>
+          </div>
+          <div class="tcard__pick"><span>${t('已选择')}</span></div>
+          <div class="tcard__folder" aria-hidden="true">
+            <div class="fade-in folder__top">
+              <span class="folder__kind">${'TRAIT ACQUIRED · ' + (neg ? t('负面') : t('正面'))}</span>
+              <span class="folder__scope">INFINITE PROTOCOL</span>
+            </div>
+            ${sp ? html`<div class="fade-in"><p class="folder__title">${sp.title}</p></div>` : null}
+            ${sp ? html`<div class="fade-in"><p class="folder__desc">${specialDesc(c.special)}</p></div>` : null}
+            <div class="fade-in"><p class="folder__trait"><b>${c.traitName || ''}</b> ${c.traitText || ''}</p></div>
+            <div class="fade-in folder__rows">
+              <span class="folder__k">${t('选择敌人')}</span><span class="folder__v folder__v--mob">${c.name || ''}</span>
+              <span class="folder__k">${t('生效范围')}</span><span class="folder__v">${t('本局剩余的全部战斗（永久）')}</span>
+            </div>
+            <div class="fade-in folder__foot"><span class="folder__seal">${t('已生效')}</span></div>
+          </div>
+        </div>`;
+      })}
+    </div>
+    ${onRetreat && !picked ? html`<button type="button" class="traitov__retreat" onClick=${onRetreat}
+      title=${t('以当前回合结算本局（不再继续后面的轮次）')}>
+      <span class="traitov__retreat-ico">⏻</span><span>${t('战术撤退')}</span>
+    </button>` : null}
+  </div>`;
+}
+
+/**
+ * 卡片 → 文件夹（照 public/dev/trait-preview 的定稿）：
+ * 脱离 flex 行流、固定定位到原位，再过渡到屏幕正中的 min(600px, 80vw) 宽信息板，
+ * 高度按内容量出来。内容逐段淡入由 CSS 的 .fade-in 负责。
+ * @param {HTMLElement} el
+ */
+function morphToFolder(el, host) {
+  // .traitov__cards 上有 transform，fixed 会相对它定位 —— 先把卡片挪到无 transform 的根节点
+  if (host && el.parentElement !== host) host.appendChild(el);
+  const cr = el.getBoundingClientRect();
+  const nw = Math.min(600, Math.round(window.innerWidth * 0.8));
+  el.style.position = 'fixed';
+  el.style.margin = '0';
+  el.style.transform = 'none';
+  el.style.transition = 'none';
+  el.style.left = cr.left + 'px';
+  el.style.top = cr.top + 'px';
+  el.style.width = cr.width + 'px';
+  el.style.height = cr.height + 'px';
+  el.style.zIndex = '9';
+  el.classList.add('is-folder');
+  // 量内容高度：先撑到目标宽度、高度交给内容，量完再退回原位。
+  // 卡片和里面那层都量一遍取大 —— 单量卡片会差十几像素，底部「已生效」会被切掉。
+  el.style.width = nw + 'px';
+  el.style.height = 'auto';
+  const face = el.querySelector('.tcard__folder');
+  const hCard = Math.round(el.getBoundingClientRect().height) || 0;
+  const hFace = face ? Math.round(face.scrollHeight) : 0;
+  const nh = Math.max(hCard, hFace, 210);
+  el.style.width = cr.width + 'px';
+  el.style.height = cr.height + 'px';
+  el.style.left = cr.left + 'px';
+  el.style.top = cr.top + 'px';
+  void el.offsetHeight;   // 强制一次回流，让上面的尺寸成为过渡起点
+  requestAnimationFrame(() => {
+    el.style.transition = '';
+    requestAnimationFrame(() => {
+      el.style.left = Math.round((window.innerWidth - nw) / 2) + 'px';
+      el.style.top = Math.round((window.innerHeight - nh) / 2) + 'px';
+      el.style.width = nw + 'px';
+      el.style.height = nh + 'px';
+    });
+  });
+}
+
+/** 特化的完整描述（与服务端一致；客户端只做展示） */
+function specialDesc(id) {
+  // i18n-ignore: server-side data mirror
+  if (id === 'reid') return '“复仇者”的生命值提升 150%，获得抵抗，攻击速度提升 100，生命值低于一半时攻击力额外提升 100% 且受到的伤害减少 60%';
+  // i18n-ignore: server-side data mirror
+  if (id === 'mdrock') return '泥岩的攻击力提升 90%，生命值提升 100%，法术抗性提升 45，泥岩的护盾值额外提升 100% 且护盾刷新冷却时间减少至 70%';
+  // i18n-ignore: server-side data mirror
+  if (id === 'xi') return '“自在”的生命值提升 50%，防御力提升 250%，法术抗性提升 30，【破桎而出】的释放间隔缩短 50%，爆炸范围扩大 100%';
+  return '';
+}

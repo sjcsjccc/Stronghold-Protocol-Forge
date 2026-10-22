@@ -35,6 +35,8 @@ import { modComponent } from './modComponents.js';
 import { RichText, UnitThumb, BondGlyph, GIcon } from './gameComponents.js';
 import { sortBonds, bondMembers, nextThreshold, bondTier, harmonyMembers, HARMONY_BOND, memberHeadCount, briefingBondTip, diyGetter, diyRecordFor, memberStandIn, standInForText } from './gameLogic.js';
 import { formatBondEffect } from './richText.js';
+// [local-patch 2026-10-22] 超限模式大盟约的效果文本（数值公式随层数）
+import { overlimitBondText, overlimitBondNow } from './overlimitBondText.js';
 import { bondIconUrl } from './assetUrls.js';
 import { data } from '../data.js';
 import { t, tc, tParts, tName } from '../../../shared/i18n.js';
@@ -107,7 +109,7 @@ export const BondStrip = modComponent('game.bondStrip', function BondStrip({ bon
  *   note, no 在场 count and no 当前效果 block (its numbers would promise an effect the mode never gives; the bond text stays).
  *   `entry.harmony` (the server's bond views: the +1 调和 added to `count`): 在场 n（含调和 +1） and the 调和 row
  */
-export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember, place = null, over = false, beside = null, owner = null, off = false }) {
+export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember, place = null, over = false, beside = null, owner = null, off = false, overlimit = false }) {
   const b = data.lookup('bonds', bondId);
   if (!b) return null;
   const count = entry?.count ?? 0;
@@ -159,11 +161,11 @@ export function BondPopup({ bondId, entry, priv, banned = [], onClose, onMember,
     </div>
     ${hasNow ? html`<section class="bpop__sec bpop__sec--now">
       <h4>${t('当前效果')} ${b.noStack ? null : html`<small class="num">${t('（{layers} 层）', { layers })}</small>`}</h4>
-      <${RichText} as="p" text=${formatBondEffect(b, layers)} class="bpop__desc" />
+      <${RichText} as="p" text=${(overlimit && overlimitBondNow(bondId, layers)) || formatBondEffect(b, layers)} class="bpop__desc" /> // [local-patch 2026-10-22]
     </section>` : null}
     <section class="bpop__sec">
       <h4>${t('盟约效果')}</h4>
-      <${RichText} as="p" text=${b.descRaw || b.desc} class="bpop__desc" />
+      <${RichText} as="p" text=${(overlimit && overlimitBondText(bondId)) || b.descRaw || b.desc} class="bpop__desc" /> // [local-patch 2026-10-22]
     </section>
     <section class="bpop__sec">
       <h4>${t('成员')} <small>${memberHeadCount(members, countsHand)}/${members.length}</small></h4>

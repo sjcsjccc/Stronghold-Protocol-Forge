@@ -95,6 +95,9 @@ export const initialState = Object.freeze({
   match: emptyMatch(),
   ticker: [],
   emotes: [],
+  // [local-patch 2026-10-22] the room text channel's tail (chat.msg / chat.history, ui/chatBox.js): the server stores
+  // nothing and broadcasts to everyone, so the client keeps what it has seen — a later joiner only sees newer lines.
+  chatMessages: [],
   clock: { offset: 0, rtt: null, synced: false },
   ui: { pendingJoin: null, pendingPlaytest: null, restoring: false, buildStale: false },
   // 工坊 mod set (W-A, DESIGN §28.9): `available` = the packs `welcome.mods` declared (empty on a plain install, so the
@@ -105,6 +108,37 @@ export const initialState = Object.freeze({
 
 /** The app-wide store singleton. */
 export const store = createStore(initialState);
+
+/** How many chat lines the client keeps (ui/chatBox.js's log is exactly this tail). */
+export const CHAT_KEEP = 40;
+
+/**
+ * Append one chat line to the ring buffer (main.js feeds every S2C `chat.msg` here; the wire's `from` is normalized
+ * to `playerId`, what the chat UI and the danmaku layer read).
+ * @param {{ from?: string, playerId?: string, name?: string, seat?: number, text?: string, at?: number }} msg
+ */
+export function pushChatMessage(msg) {
+  if (!msg || (typeof msg.text !== 'string')) return;
+  const line = { ...msg, playerId: msg.playerId ?? msg.from };
+  const cur = store.get().chatMessages || [];
+  store.set({ chatMessages: [...cur.slice(-(CHAT_KEEP - 1)), line] });
+}
+
+/** Drop the chat log — a new room's lines must not sit under the old room's (called when the room changes). */
+export function clearChat() {
+  if (store.get().chatMessages?.length) store.set({ chatMessages: [] });
+}
+
+/**
+ * 房间身份变了没有：`room.code` 不同（变成 null = 退出房间，也算）即变了。main.js 的 store 订阅用它清空对话 ——
+ * `room.closed` 那条路早就清了，但玩家自己点「离开同盟」不走那里，于是上一局的对话会留在下一局里。
+ * @param {{ code?: string }|null|undefined} prev
+ * @param {{ code?: string }|null|undefined} next
+ * @returns {boolean}
+ */
+export function roomIdentityChanged(prev, next) {
+  return (prev?.code || null) !== (next?.code || null);
+}
 
 /**
  * Whether the resource-pack entry gate is holding the client on the title screen (缺口 3, DESIGN §28.13.3).

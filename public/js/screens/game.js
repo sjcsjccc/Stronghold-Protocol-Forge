@@ -96,6 +96,11 @@ import { ChoiceOverlay, spMarks } from '../ui/choiceOverlay.js';
 import { EnemyDrawer } from '../ui/enemyDrawer.js';
 import { Ticker } from '../ui/ticker.js';
 import { EmoteWheel } from '../ui/emotes.js';
+// [local-patch 2026-10-22] the in-match text channel's log/input (room.chat) and the AI teammates' flavor danmaku
+import { ChatBox } from '../ui/chatBox.js';
+import { aiDanmakuEvents } from '../battle/aiDanmakuEvents.js';
+// [local-patch 2026-10-22] 超限：词条抉择全屏界面
+import { TraitOverlay } from '../ui/traitOverlay.js';
 import { EffectsList } from '../ui/effectsList.js';
 import { CombatHud } from '../ui/combatHud.js';
 import { CombatMetricsPanel } from '../ui/combatMetrics.js';
@@ -237,6 +242,11 @@ function MatchScreen() {
   const showMetrics = metricsSetting && !modRoom && !spectator;
   useEffect(() => { if (!showMetrics) setMetricsOpen(false); }, [showMetrics]);
   const [emoteOpen, setEmoteOpen] = useState(false);
+  // [local-patch 2026-10-22] the in-match chat panel (ui/chatBox.js): the gear below owns the open state
+  const [chatOpen, setChatOpen] = useState(false);
+  // [local-patch 2026-10-22] 超限词条抉择（只在 TRAIT_DRAFT 阶段有值）
+  const traitDraft = phase === PHASE.TRAIT_DRAFT ? (pub?.trait || null) : null;
+  const [traitBusy, setTraitBusy] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   // 战斗倍速（顶栏那个 ×1/×2/×3/×4）：**纯本地播放选择** —— 同一段确定的 tick 序列只是推进得更快，
@@ -980,6 +990,13 @@ function MatchScreen() {
     ? specFacts.list.filter((s) => s && bubbles.has(s.playerId)).map((s) => ({ ...bubbles.get(s.playerId), name: s.name }))
     : null;
 
+  // [local-patch 2026-10-22] AI 队友的彩蛋弹幕（battle/aiDanmakuEvents.js）：盟约层数名言跟着公开帧走，联防的
+  // 吐槽/祝贺跟着阶段与结算走。管理器自己按「一局一次 / 一回合一次」去重，重进对局界面即重置（新一局重新武装）。
+  useEffect(() => { aiDanmakuEvents.checkBondAndLayerEvents(pub, priv, myId); }, [pub, priv, myId]);
+  useEffect(() => { aiDanmakuEvents.checkBattleLeaks(pub, myId); }, [phase, pub, myId]);
+  useEffect(() => { aiDanmakuEvents.checkUniteSettlement(pub, myId, pub?.uniteResult); }, [pub, myId]);
+  useEffect(() => () => aiDanmakuEvents.reset(), []);
+
   // ---- actions ----------------------------------------------------------------------------------------------
   const buy = useCallback(async (i) => {
     // Clicks and hotkeys share this guard while the same slot's purchase is awaiting a reply.
@@ -1719,10 +1736,10 @@ function MatchScreen() {
         pause=${canPause || paused ? { show: canPause, paused, busy: pauseBusy, onToggle: () => togglePause(!paused) } : null}
         live=${liveLpNow} spectator=${spectator}
         speed=${specFacts.isHost ? matchRate : (Number.isFinite(field?.speed) && field.speed > 0 ? Math.round((field.speed / 2) * 10) / 10 : 1)}
-        onSpeed=${battleRunner && specFacts.isHost ? (n) => {
+        onSpeed=${pub?.isInfinite ? (v) => actions.combatSpeed(v) : (battleRunner && specFacts.isHost ? (n) => {
           setMatchRate(n);
           net.request('g.matchSpeed', { rate: n }).catch(() => setMatchRate(1));
-        } : null}
+        } : null)}
         speedDisabled=${!specFacts.isHost}
         speedHint=${t('对局倍速由房主统一控制（当前 ×{rate}），真人与 AI 同速', { rate: specFacts.isHost ? matchRate : (Number.isFinite(field?.speed) && field.speed > 0 ? Math.round((field.speed / 2) * 10) / 10 : 1) })}
         spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom}
@@ -1783,9 +1800,15 @@ function MatchScreen() {
       <div class="ui-slot gm__ui-slot" data-ui-slot="hud.right" aria-label=${t('界面插件')} dangerouslySetInnerHTML=${{ __html: '' }}></div>
 
       <div class="gm__corner">
+        ${/* [local-patch 2026-10-22] the in-match text channel: the log + input panel, the gear below owns the open state */
+        html`<${ChatBox} active=${chatOpen} onToggle=${setChatOpen} />`}
         ${showMetrics && metricsOpen ? html`<${CombatMetricsPanel} myId=${myId} onClose=${() => setMetricsOpen(false)} />` : null}
-        ${/* [local-patch 2026-10-22] a spectator seat emotes too (the server whitelists g.emote for it) */
-        html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
+        ${/* [local-patch 2026-10-22] a spectator seat emotes too (the server whitelists g.emote for it); opening one
+          corner panel closes the other */
+        html`<${EmoteWheel} open=${emoteOpen} onToggle=${(v) => { setEmoteOpen(v); if (v) setChatOpen(false); }} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
+        <button type="button" class=${cx('gm__gear gm__chat', chatOpen && 'is-on')} aria-label=${t('发言')} title=${t('发言')} aria-expanded=${chatOpen}
+          onKeyDown=${(e) => { if (e.key === ' ') e.stopPropagation(); }}
+          onClick=${() => { setChatOpen((v) => { const n = !v; if (n) setEmoteOpen(false); return n; }); }}><${Icon} name="chat" /></button>
         ${showMetrics ? html`<button type="button" class="gm__gear gm__metrics" aria-label=${t('作战统计')} title=${t('作战统计')} aria-expanded=${metricsOpen}
           aria-controls="combat-metrics-panel" onKeyDown=${(e) => { if (e.key === ' ') e.stopPropagation(); }} onClick=${() => {
             setMetricsOpen(!metricsOpen);
@@ -1805,7 +1828,7 @@ function MatchScreen() {
         bandId=${scoutBandId} bandOwner=${scoutBandOwner}
         onEnemy=${(k, n) => setDetail({ kind: 'enemy', id: k, count: n })} onChess=${(id) => setDetail({ kind: 'chess', id, foreign: true })} />` : null}
 
-      ${bondPop ? html`<${BondPopup} bondId=${bondPop.bondId} entry=${bondPop.entry} priv=${bondPop.priv} banned=${pub?.bannedChess || []} owner=${bondPop.name}
+      ${bondPop ? html`<${BondPopup} bondId=${bondPop.bondId} entry=${bondPop.entry} priv=${bondPop.priv} banned=${pub?.bannedChess || []} overlimit=${!!pub?.isInfinite} owner=${bondPop.name}
         off=${offBonds.has(bondPop.bondId)} morphMode=${morphMode}
         place=${bpPlace} over=${!!resolved && bpPlace === dSide}
         onClose=${() => setBondOpen(null)} onMember=${(id, items, standInFor, diy) => setDetail({ kind: 'chess', id, owner: bondPop.ownerId, items: items || null, standInFor: standInFor || null, diy: diy || null })} />` : null}
@@ -1823,6 +1846,10 @@ function MatchScreen() {
     </div>
 
     ${hasOffers && !sp && !personalChoice ? html`<${OfferOverlay} pub=${pub} myId=${myId} readOnly=${spectator || !alive} onAction=${actions.offer} />` : null}
+    ${/* [local-patch 2026-10-22] 超限词条抉择：三选一叠层；战术撤退以当前回合结算本局 */
+      traitDraft ? html`<${TraitOverlay} trait=${traitDraft} myId=${myId} busyIdx=${traitBusy}
+      onPick=${async (i) => { setTraitBusy(i); await actions.traitChoice(i); setTraitBusy(null); }}
+      onRetreat=${async () => { if (confirm(t('以当前回合结算本局？'))) await actions.traitRetreat(); }} />` : null}
     ${sp ? html`<${ChoiceOverlay} pub=${pub} sp=${sp} myId=${myId} solo=${solo} busyIdx=${spBusy} total=${total}
       onPick=${async (i) => { setSpBusy(i); await actions.choice(i); setSpBusy(null); }} />` : null}
     ${personalChoice ? html`<${ChoiceOverlay} key=${personalChoice.id} pub=${pub} sp=${personalChoice} myId=${myId} solo=${solo} personal=${true}

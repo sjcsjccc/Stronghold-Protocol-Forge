@@ -509,7 +509,9 @@ export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, pri
   const lp = boss && Number.isFinite(pub?.teamLp) ? pub.teamLp : Number.isFinite(priv?.lp) ? priv.lp : null;
   // normal rounds: the leaks of the own battle so far (boss rounds: the team LP above already moves live)
   const pending = !boss && Number.isFinite(lp) && live && live.pending > 0 ? Math.min(lp, live.pending) : 0;
-  const hidden = phase === PHASE.HIDDEN_CORE || (Number.isFinite(pub?.lastRound) && pub.round > pub.lastRound);
+  // [local-patch 2026-10-22] 超限模式没有「隐藏核心」这一步，回合数一路涨下去：不能用 lastRound 把它判成 ??
+  const hidden = phase === PHASE.HIDDEN_CORE
+    || (!pub?.isInfinite && Number.isFinite(pub?.lastRound) && pub.round > pub.lastRound);
   const roundText = hidden ? '??' : pub?.round > 0 ? String(pub.round) : '--';
   // a spectator seat (no m.private, community report #26) never readies
   const showReady = phase === PHASE.PREP && !spectator && priv?.alive !== false;
@@ -537,6 +539,7 @@ export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, pri
             bubbles=${specBubbles} ttl=${(config?.timers?.chatBubble ?? 3) * 1000} />
         </div>
         ${pub?.difficulty ? html`<${DifficultyTag} difficulty=${pub.difficulty} size="sm" />` : null}
+        ${pub?.isInfinite ? html`<span class="gtop__inf" title=${t('超限模拟：R16 起无限回合')}>∞ ${t('超限')}</span>` : null}
         ${pub?.test ? html`<${TestMark} class="gtop__test" />` : null}
         <${UnofficialMark} room=${room} compact=${true} class="gtop__mod" />
         ${ruleLine(room?.content?.rules) ? html`<span class="gtop__rules" data-testid="plugin-rules">${ruleLine(room?.content?.rules)}</span>` : null}
@@ -573,10 +576,74 @@ export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, pri
         ${onSpeed || speedDisabled ? html`<${SpeedButton} speed=${speed} onSpeed=${onSpeed} disabled=${speedDisabled} hint=${speedHint} />` : null}
       </div>
       <${OvertimeWarning} ot=${ot} />
+      ${/* [local-patch 2026-10-22] 超限：战斗内 1×/2× 出怪速度开关（pub.speedPref）；已有词条的面板入口 */
+      pub?.isInfinite ? html`<${SpeedToggle} speed=${pub?.speedPref ?? 1} onSpeed=${onSpeed} />` : null}
+      ${pub?.isInfinite && Array.isArray(pub?.traitMods) && pub.traitMods.length ? html`<${TraitChips} mods=${pub.traitMods} />` : null}
       ${showReady ? html`<${ReadyToggle} priv=${priv} onToggle=${onReady} busy=${readyBusy} readyCount=${readyCount} total=${playerCount} />` : null}
     </div>
   </header>`;
 });
+
+/**
+ * [local-patch 2026-10-22] 超限已选词条（业主 2026-10-20）：右侧一枚【词条 N】按钮，点开一个面板列出本局拿到
+ * 的全部词条与效果 —— 以前是一排小标签常驻在时钟旁边，占地方还看不全。
+ */
+function TraitChips({ mods }) {
+  const [open, setOpen] = useState(false);
+  const pos = mods.filter((m) => m.polarity !== 'neg').length;
+  const neg = mods.length - pos;
+  return html`<div class="gtrait">
+    <button type="button" class=${'gtrait__btn' + (open ? ' is-open' : '')} onClick=${() => setOpen((v) => !v)}
+      title=${t('查看本局已选词条')} data-testid="trait-view">
+      <span class="gtrait__ico">◆</span>${t('词条')}<b class="num">${mods.length}</b>
+    </button>
+    ${open ? html`<div class="gtrait__pop" role="dialog" aria-label=${t('本局词条')}>
+      <div class="gtrait__head">
+        <div class="gtrait__title">
+          <span class="gtrait__micro">INFINITE PROTOCOL · TRAIT</span>
+          <b>${t('本局生效词条')}</b>
+        </div>
+        <button type="button" class="gtrait__x" onClick=${() => setOpen(false)} aria-label=${t('关闭')}>×</button>
+      </div>
+      <div class="gtrait__tally">
+        <span class="gtrait__tal is-pos"><b class="num">${pos}</b><i>${t('正面')}</i></span>
+        <span class="gtrait__tal is-neg"><b class="num">${neg}</b><i>${t('负面')}</i></span>
+        <span class="gtrait__tal is-total"><b class="num">${mods.length}</b><i>${t('合计')}</i></span>
+      </div>
+      <p class="gtrait__note">${t('词条从选定回合起生效，贯穿本局剩余的全部战斗。')}</p>
+      <ul class="gtrait__list">
+        ${mods.map((m) => html`<li key=${m.id + m.round} class=${'gtrait__row' + (m.polarity === 'neg' ? ' is-neg' : '')}>
+          <span class="gtrait__r num">R${m.round}</span>
+          <span class="gtrait__n">${m.name}</span>
+          <span class="gtrait__t">${m.text || ''}</span>
+        </li>`)}
+      </ul>
+      <div class="gtrait__foot">
+        <span class="gtrait__seal">${t('全部生效中')}</span>
+      </div>
+    </div>` : null}
+  </div>`;
+}
+
+/** [local-patch 2026-10-22] 超限倍速开关（业主 2026-10-20）：玩家自己点，1× ↔ 2×。 */
+function SpeedToggle({ speed, onSpeed }) {
+  // speed 是开关位置（1 / 2），不是绝对倍率；基准倍率见服务端 GAME_SPEED
+  const fast = Number(speed) >= 2;
+  const label = t('出怪速度');
+  return html`<button type="button" class=${'gspeed' + (fast ? ' is-fast' : '')}
+    onClick=${() => onSpeed?.(fast ? 1 : 2)} role="switch" aria-checked=${fast ? 'true' : 'false'}
+    aria-label=${label}
+    title=${fast ? t('出怪与战斗推进 2 倍速 · 倒计时仍是 1 倍速（点一下切回常速）')
+                : t('出怪与战斗推进 1 倍速（点一下切到 2 倍速，倒计时不受影响）')}
+    data-testid="combat-speed">
+    <span class="gspeed__cap">${t('SPEED')}</span>
+    <span class="gspeed__rail" aria-hidden="true">
+      <span class="gspeed__opt${fast ? '' : ' is-on'}">1×</span>
+      <span class="gspeed__opt${fast ? ' is-on' : ''}">2×</span>
+      <span class="gspeed__thumb"></span>
+    </span>
+  </button>`;
+}
 
 /** DP counter shown at the right edge during combat. */
 export function DpCounter({ dp }) {

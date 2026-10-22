@@ -391,3 +391,15 @@ h1, h2, h3, h4, p { margin: 0; }
     transition-duration: 1ms !important;
   }
 }
+
+
+/* [local-patch 2026-10-22] 超限模拟的紫色调（上游 0.3.1.1 同款）：HUD 的 ∞ 徽记、词条面板、倍速开关 */
+:root {
+  --inf-300: #e2d4ff;
+  --inf-400: #c988ff;
+  --inf-500: #a855f7;
+  --inf-600: #7a3edc;
+  --inf-a20: rgba(168, 85, 247, .20);
+  --inf-a35: rgba(168, 85, 247, .35);
+  --inf-glow: rgba(150, 90, 255, .55);
+}

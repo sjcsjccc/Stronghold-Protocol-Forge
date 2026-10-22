@@ -64,6 +64,8 @@ import { difficultyInfo, ProtoCard, LAYER_TEXT, serverSeatMaxOf } from './lobby.
 import { ProtocolScene } from '../ui/protocolScene.js';
 import { SearchPanel, FoundPanel } from '../ui/matchFlow.js';
 import { usePresence, useRise, afterLeave } from '../ui/transitions.js';
+// [local-patch 2026-10-22] the room's text channel (room.chat, server/lobby.js chat) — the in-match one is game.js's
+import { ChatBox } from '../ui/chatBox.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 const MAX_SEATS = Number(SEAT_CONST.MAX_SEATS) || 4;
@@ -982,6 +984,9 @@ export function RoomScreen() {
     ${foundShown ? html`<${FoundPanel} class=${foundLeaving ? 'is-leaving' : ''} seats=${facts.seats.length} text=${t('同盟集结完毕')} />` : null}
     ${picking ? html`<${CardPicker} current=${myCard} list=${cardList} m=${m} onPick=${pickCard} onClose=${() => setPicking(false)} />` : null}
     ${protoShown ? html`<${RoomProtocol} room=${room} variant=${variant} busy=${busy} onClose=${() => setPicker(false)} onPick=${setDifficulty} leaving=${protoLeaving} />` : null}
+    ${/* [local-patch 2026-10-22] the room's text channel (room.chat): uncontrolled — its own 💬 trigger bottom-left,
+      its own open state; a spectator seat sees the log read-only (server refuses its lines with SPECTATOR) */
+    html`<${ChatBox} />`}
   </div>`;
 }
 

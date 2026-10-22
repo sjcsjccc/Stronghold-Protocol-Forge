@@ -162,10 +162,12 @@ test('co-op spectator over websockets: watches the real match like an eliminated
   await ok(a, { t: 'room.start' });
   const info = await s.waitFor('m.public', (p) => p.phase === 'INFO_CHECK');
   assert.ok(!info.players.some((p) => p.playerId === s.id), 'never a player');
-  for (const msg of [{ t: 'g.infoReady' }, { t: 'g.band', bandId: 'band_bldsk' }, { t: 'g.emote', id: EMOTES[0] }]) {
+  // [local-patch 2026-10-22] g.emote left the SPECTATOR refusals: a spectator seat emotes over the wire too
+  for (const msg of [{ t: 'g.infoReady' }, { t: 'g.band', bandId: 'band_bldsk' }]) {
     const r = await s.request(msg);
     assert.equal(r.code, 'SPECTATOR', msg.t);
   }
+  await ok(s, { t: 'g.emote', id: EMOTES[0] });
   await ok(a, { t: 'g.infoReady' });
   const draft = await pickCoopBands([a]);
   assert.ok(Object.values(draft.draft.picks).includes('band_bldsk'), 'seed 69: the AI already took the default');

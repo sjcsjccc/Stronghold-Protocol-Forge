@@ -39,6 +39,10 @@ export class MatchIntents {
       // 「意图不存在」**行为等价**。
       case 'g.unequip': return ps.unequip(msg.itemUid);
       case 'g.reward': return ps.pickReward(msg.idx);
+      // [local-patch 2026-10-22] 超限的词条抉择 / 战术撤退 / 战斗内倍速开关（traitDraft.js / phases.js）
+      case 'g.traitChoice': return this.pickTrait(ps, msg.idx);
+      case 'g.traitRetreat': return this.retreatNow(ps);
+      case 'g.combatSpeed': return this.setCombatSpeed(ps, msg.speed);
       case 'g.choice': return msg.choiceId !== undefined
         ? this.pickPersonalChoice(ps, msg.idx, msg.choiceId)
         : this.pickCard(ps, msg.idx);
@@ -158,6 +162,9 @@ export class MatchIntents {
    */
   setMatchSpeed(ps, rate) {
     if (this.ended || this.disposed) return fail(ERR.WRONG_PHASE);
+    // [local-patch 2026-10-22] 超限局不走房主倍速：它有自己的战斗内 1×/2× 开关（phases.js setCombatSpeed），
+    // 两条速度链会互相覆盖 —— 超限房里房主倍速按钮保持无效。
+    if (this.isInfinite) return fail(ERR.WRONG_PHASE, 'the overlimit match uses its own combat speed switch');
     if (!this.hostId || ps.playerId !== this.hostId) return fail(ERR.NOT_HOST);
     if (!Number.isInteger(rate) || rate < 1 || rate > 4) return fail(ERR.BAD_MSG);
     if (rate === this.matchRate) return OK;
@@ -186,7 +193,7 @@ export class MatchIntents {
     const b = this.newBattle({
       seed: deriveSeed(this.seed, `preview:${this.round}:${ps.seat}`), kind: 'normal', modeId: this.modeId, round: this.round,
       stageId: this.stageId, rect: { ...this.layout.battle.normal }, timeLimit: 60, players, spawns: [], routes: this.wave ? this.wave.routes : [],
-      sharedBoss: null, flags: { layerGainsEnabled: !bossRound, ...this.gd.dp }, fieldId: `n:${ps.playerId}`, recordEvents: false,
+      sharedBoss: null, flags: this._rmSpecFlags({ layerGainsEnabled: !bossRound, ...this.gd.dp, ...(this.isInfinite ? { overlimit: true } : {}) }), fieldId: `n:${ps.playerId}`, recordEvents: false,
     });
     try {
       if (typeof b.start === 'function') b.start();

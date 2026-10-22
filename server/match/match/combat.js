@@ -12,6 +12,16 @@ import { DELAYS } from './common.js';
 import { battleOptsFromMatch } from './battleOpts.js';
 import { previewPlayer } from '../preview.js';
 import { morphBattleOpt } from '../../../shared/plugins/rules.js';
+// [local-patch 2026-10-22] 超限模拟的性能/规则防护（限伤放宽、密集索敌节流、霸体状态机）
+import { installInfiniteRule } from '../../sim/infiniteRule.js';
+
+/** [local-patch 2026-10-22] 兜底时限：最后一只出场时间 + 走完全程的余量（60 秒太短，超限会误判漏怪）。 */
+function estimateTimeLimit(wave) {
+  const sp = Array.isArray(wave && wave.spawns) ? wave.spawns : [];
+  const last = sp.length ? Math.max(...sp.map((x) => Number(x && x.time) || 0)) : 0;
+  return Math.max(60, Math.ceil(last + 60));
+}
+
 
 export class MatchCombat {
   /** Construct a battle; a constructor failure yields a finished stand-in (clean result) and is logged. */
@@ -19,7 +29,10 @@ export class MatchCombat {
       const full = { ...battleOptsFromMatch(this, opts), ...morphBattleOpt(this.rules),
         ...(preview ? { logger: {}, quiet: true } : {}) };
     try {
-      return new this.BattleClass(full);
+      const battle = new this.BattleClass(full);
+      // [local-patch 2026-10-22] 超限模拟的性能/规则防护：只有超限局的战斗才装，其他模式拿到的是完全没动过的 engine。
+      if (this.isInfinite) installInfiniteRule(battle);
+      return battle;
     } catch (e) {
       if (!preview) this.reportError(`battle ${opts.fieldId} construct`, e);
       return new DeadBattle(full, 'forced');
@@ -52,6 +65,8 @@ export class MatchCombat {
     const input = ps.battleInput({ side: 'L', colOffset: 0 });
     // the client's list: bounty units inserted among their host action's own units, which are re-timed around them
     const spawns = withBounties(this.gd, this.round, wave, ps.bounties, ps.playerId).map((s) => ({ ...s, ownerPlayerId: ps.playerId }));
+    // [local-patch 2026-10-22] 超限词条抉择选中的怪：本轮出场，且不带悬赏金（业主 2026-10-18）
+    for (const s of (this.traitSpawnFor ? this.traitSpawnFor(this.round) : [])) spawns.push(s);
     const ev = { input, kind: 'normal', round: this.round, spawns, ...(preview ? { preview: true } : {}) };
     // Preview construction failures go to the rehearsal's discard path, never Match.dispatch's live error sink.
     if (preview) this.dispatcher.dispatch(ps, 'onBattleStart', ev);
@@ -68,7 +83,8 @@ export class MatchCombat {
       spawns: this._sanitizeSpawns(Array.isArray(ev.spawns) ? ev.spawns : spawns, ps.playerId),
       routes: wave.routes,
       sharedBoss: null,
-      flags: { layerGainsEnabled: true, ...this.gd.dp },
+      // [local-patch 2026-10-22] 超限词条：静态修正合并进 flags（普通模式 this.traitMods 为空，等价于原来的对象）
+      flags: this._rmSpecFlags({ layerGainsEnabled: true, ...this.gd.dp, ...(this.isInfinite ? { overlimit: true } : {}), ...(this.traitFlagBundle ? this.traitFlagBundle() : {}) }),
       fieldId: `n:${ps.playerId}`,
       enemyOverrides: wave.overrides,
       waveId: wave.templateId,
@@ -85,8 +101,10 @@ export class MatchCombat {
     const alive = this.alivePlayers();
     this.lastResults = new Map();
     this.fields = alive.map((ps) => ({ fieldId: `n:${ps.playerId}`, kind: 'normal', players: [ps.playerId], battle: this._normalBattle(ps), live: true }));
-    const limit = this.wave ? this.wave.timeLimit : 60;
-    this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / this.gameSpeed) * 1000);
+    // [local-patch 2026-10-22] 超限 R16+ 有 33–60 只怪、最后一只 70 秒后才出场，60 秒会把还活着的全判成漏怪。
+    // 业主 2026-10-20：「2 倍速不减倒计时，倒计时依旧是正常的 120 秒」——倍速只加快出怪与战斗推进，倒计时按真实时间走。
+    const limit = this.wave && Number.isFinite(this.wave.timeLimit) ? this.wave.timeLimit : estimateTimeLimit(this.wave);
+    this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / (this.isInfinite ? 1 : this.gameSpeed)) * 1000);
     this._defaultWatch();
     this.markPublic();
     this.runner = new FieldRunner(this, this.fields, { onDone: (runner) => this.combatDone(runner) });
@@ -99,8 +117,10 @@ export class MatchCombat {
     this.lastResults = new Map();
     this.watchers.clear();
     const fields = alive.map((ps) => this._ccField({ fieldId: `n:${ps.playerId}`, kind: 'normal', players: [ps.playerId], opts: this._normalOpts(ps) }));
-    const limit = this.wave ? this.wave.timeLimit : 60;
-    this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / this.gameSpeed) * 1000);
+    // [local-patch 2026-10-22] 超限 R16+ 有 33–60 只怪、最后一只 70 秒后才出场，60 秒会把还活着的全判成漏怪。
+    // 业主 2026-10-20：「2 倍速不减倒计时，倒计时依旧是正常的 120 秒」——倍速只加快出怪与战斗推进，倒计时按真实时间走。
+    const limit = this.wave && Number.isFinite(this.wave.timeLimit) ? this.wave.timeLimit : estimateTimeLimit(this.wave);
+    this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / (this.isInfinite ? 1 : this.gameSpeed)) * 1000);
     this._launch(fields);
     // every fighting human runs its own field; eliminated humans (and spectator seats) keep watching (research 09 §3.1
     // "Keep-watching auto-observes the first available field", switching freely with 前往查看): a replica of the field

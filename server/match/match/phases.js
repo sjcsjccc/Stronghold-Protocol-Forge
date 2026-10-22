@@ -4,9 +4,14 @@
 // round start).
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
-import { PHASE, ERR } from '../../../shared/constants.js';
+import { PHASE, ERR, GEO } from '../../../shared/constants.js';
 import { msg } from '../../../shared/i18n.js';
+import { GAME_SPEED } from '../fields.js';
+const BASE = GAME_SPEED; // [local-patch 2026-10-22] 超限的 1×/2× 是相对基准的说法（1× = 全模式的 GAME_SPEED）
 import { buildNormalWave, buildBossWave } from '../waves.js';
+// [local-patch 2026-10-22] 超限模拟：R16+ 无限波次与双 Boss 生成器、词条抉择的开闸判断（上游 0.3.1.1）
+import { isInfiniteBossRound, buildInfiniteNormalWave, buildInfiniteBossWave, capWaveKinds } from '../infiniteWaves.js';
+import { wantsTraitDraft } from './traitDraft.js';
 import { pairPlayers } from '../finalAssault.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
 import { botPickBand } from '../bot.js';
@@ -314,6 +319,9 @@ export class MatchPhases {
   _startRoundAfterOffers(r) {
     this.phase = PHASE.ROUND_START;
     this.round = r;
+    // [local-patch 2026-10-22] 超限：R16 前固定 1×；R16 起按战斗内开关（setCombatSpeed，默认 1×）。
+    // 业主 2026-10-20：「一倍速和之前的很快的速度一样，二倍速是一倍速两倍」——基准（1×）就是全模式的 GAME_SPEED=2。
+    if (this.isInfinite) this.gameSpeed = r < 16 ? GAME_SPEED : (BASE * (this.infiniteSpeedPref || 1));
     this.fields = [];
     this.watchers.clear();
     this.unitePlan = null;
@@ -327,12 +335,20 @@ export class MatchPhases {
     // round start: its recompute() checks the board on the field the player deploys on this round (deployFieldOf reads
     // the boss pairing), so R14 → R15 never re-checks a boss-field board against the normal field (user playtest #5
     // item 7). rngWaves is used only here, so the order leaves every random stream unchanged.
-    const isBoss = r === this.gd.bossRound || r === this.gd.hiddenRound;
+    // [local-patch 2026-10-22] 业主 2026-10-20：超限 R20/25/30… 是**真正的 Boss 轮** —— 进 FINAL_ASSAULT，
+    // 共享血池、顶部血条、加时倒计时那套全都走。_planBossWaves 里已经是 buildInfiniteBossWave（按档位挑 Boss + 无限缩放）。
+    const infBossRound = this.isInfinite && isInfiniteBossRound(r);
+    const isBoss = r === this.gd.bossRound || r === this.gd.hiddenRound || infBossRound;
     if (isBoss) {
       this._planBossWaves();
+    } else if (this.isInfinite && r >= 16) {
+      // [local-patch 2026-10-22] R16+ 无限波次（infiniteWaves.js，路径按战场矩形过滤）
+      this.wave = buildInfiniteNormalWave(this.gd, this.rngWaves, r, this._infiniteRoutes(r));
     } else {
       // stageId: a workshop stage may bind its own wave table to a round (shared/waveAuthoring.js; waves.js buildNormalWave)
       this.wave = buildNormalWave(this.gd, this.rngWaves, this.factions, r, this.stageId);
+      // [local-patch 2026-10-22] 超限的前 15 回合收敛到 3 种怪（业主 2026-10-17）；R16 起走上面的无限波次，不设上限。
+      if (this.isInfinite) this.wave = capWaveKinds(this.wave, 3, this.rngWaves);
     }
     for (const ps of alive) ps.startRound(r);
     // 助战 (shared/support.js): re-check what each player brought against the pool ONE more time at the first round's
@@ -400,11 +416,74 @@ export class MatchPhases {
     this.bossPairs = groups.map(g => g.map(p => p.playerId));
     this.bossWaves = groups.map((g) => ({
       players: g.map((p) => p.playerId),
-      wave: buildBossWave(this.gd, this.rngWaves, this.factions, r, { bossId, solo: this.isSolo || g.length === 1 }, this.stageId),
+      // [local-patch 2026-10-22] 超限 R16+ 的 Boss 轮走 buildInfiniteBossWave（按档位挑 Boss + 无限缩放 + 双 Boss）
+      wave: (this.isInfinite && r >= 16)
+        ? buildInfiniteBossWave(this.gd, this.rngWaves, r, this._infiniteRoutes(r, GEO.BOSS_RECT))
+        : buildBossWave(this.gd, this.rngWaves, this.factions, r, { bossId, solo: this.isSolo || g.length === 1 }, this.stageId),
     }));
   }
 
+  /**
+   * [local-patch 2026-10-22] 超限波次的进场路径（上游 0.3.1.1 同款）：从 stages.json 的地面折线里挑出
+   * **整条都落在这块战场矩形里**的（起点在图外的怪看起来就是「从莫名其妙的地方出来」）。飞行单位另走
+   * FLY：没有现成的空中折线时，用地面路径的起终点直飞。
+   * @returns {Array<{motion:string,start:number[],end:number[],checkpoints:Array}>}
+   */
+  _infiniteRoutes(round, rect = GEO.NORMAL_RECT) {
+    const stage = this.stage || (this.stageId ? this.gd.stage(this.stageId) : null);
+    const paths = (stage && (stage.groundPaths || stage.groundPathsWithDevices)) || {};
+    const out = [];
+    const inRect = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)
+      && p[0] >= rect.r0 - 0.5 && p[0] <= rect.r1 + 0.5
+      && p[1] >= rect.c0 - 0.5 && p[1] <= rect.c1 + 0.5;
+    for (const [key, pts] of Object.entries(paths)) {
+      if (typeof key !== 'string' || !Array.isArray(pts) || pts.length < 2) continue;
+      const [from, to] = key.split('->');
+      const s = from && from.split(',').map(Number);
+      const e = to && to.split(',').map(Number);
+      if (!s || !e || !s.every(Number.isFinite) || !e.every(Number.isFinite)) continue;
+      if (!inRect(s) || !inRect(e) || !pts.every(inRect)) continue;
+      const mid = pts.slice(1, -1).filter(inRect);
+      out.push({ motion: 'WALK', start: [s[0], s[1]], end: [e[0], e[1]], checkpoints: mid });
+    }
+    if (!out.length) return [];
+    // 飞行单位：沿最长的地面路径直飞（端点相同），数量够 spawn 轮流用。飞行路径不能是「起点→蓝门」的
+    // 一条直线 —— 那看起来就是直冲蓝门（业主 2026-10-19）：沿用地面的折点作为绕行路线，飞行怪照样在空中走 S 形。
+    // 飞行路径给两条（上/下各一条），出怪预览也能分出上下路。
+    const longest = out.reduce((a, b) => (b.checkpoints.length > a.checkpoints.length ? b : a), out[0]);
+    const others = out.filter((x) => x !== longest);
+    out.push({ motion: 'FLY', start: longest.start, end: longest.end, checkpoints: longest.checkpoints.slice() });
+    if (others.length) {
+      const o = others[0];
+      out.push({ motion: 'FLY', start: o.start, end: o.end, checkpoints: o.checkpoints.slice() });
+    }
+    void round;
+    return out;
+  }
+
+  /**
+   * [local-patch 2026-10-22] 超限的战斗内速度开关（上游 0.3.1.1）：开关上的 1× / 2× 是**相对基准**的说法
+   * （1× = 全模式的 GAME_SPEED，原来就这么快；2× = 它的两倍）。经什么 intent 走由 protocol 侧声明。
+   */
+  setCombatSpeed(ps, speed) {
+    if (!this.isInfinite) return fail(ERR.WRONG_PHASE);
+    // 开关上的 1× / 2× 是**相对基准**的说法：1× = 全模式的 GAME_SPEED（原来就这么快），2× = 它的两倍。
+    // 内部 gameSpeed 仍是绝对倍率。倒计时不跟着倍速换算（业主 2026-10-20）：切 1×/2× 时时钟照常走。
+    const pref = speed === 2 ? 2 : 1;
+    const v = BASE * pref;
+    const prev = Number(this.gameSpeed) > 0 ? this.gameSpeed : BASE;
+    this.infiniteSpeedPref = pref;
+    if (v === prev) { this.markPublic(); return OK; }
+    this.gameSpeed = v;
+    void ps;
+    this.markPublic();
+    return OK;
+  }
+
   afterRoundStart() {
+    // [local-patch 2026-10-22] 超限：通过 Boss 的下一回合先开词条抉择（业主 2026-10-18）；普通模式完全不走这里。
+    // 词条抉择已经在 afterSettle 里开过了（Boss 轮结束的时点），这里不再重复。
+    if (this._traitDoneRound !== this.round - 1 && wantsTraitDraft(this, this.round)) { this.enterTraitDraft(this.round); return; }
     if (this.gd.spRounds().includes(this.round)) this.enterSpDraft();
     else this.beforePrepOffers();
   }

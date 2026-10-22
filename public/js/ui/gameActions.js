@@ -122,4 +122,8 @@ export const actions = {
   // [local-patch 2026-10-22] room-level intent (NOT g.*): the host kicks a seated human while the match runs — the same
   // room.kick as the lobby's, which now routes the mid-match leave (onLeave → the 中途退出 settlement)
   kickPlayer: (seat, playerId) => act('room.kick', { seat, playerId }, { sfx: 'back' }),
+  // [local-patch 2026-10-22] 超限：词条三选一 / 战术撤退 / 战斗内 1×/2× 出怪速度
+  traitChoice: (idx) => act('g.traitChoice', { idx }),
+  traitRetreat: () => act('g.traitRetreat', {}),
+  combatSpeed: (speed) => act('g.combatSpeed', { speed }),
 };

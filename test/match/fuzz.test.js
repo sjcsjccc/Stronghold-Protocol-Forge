@@ -38,6 +38,10 @@ function randomIntent(rng, m, ps) {
     case 'g.unequip': return { t, itemUid: uid() };
     // [local-patch 2026-10-21] 补丁⑦：倍速 rate 1–4 —— 同 g.unequip 的规矩，表里加了类型就教会这里造合法载荷。
     case 'g.matchSpeed': return { t, rate: 1 + rng.int(4) };
+    // [local-patch 2026-10-22] 超限：词条三选一 / 战术撤退 / 战斗内 1×/2×（普通局全是合法的拒答）
+    case 'g.traitChoice': return { t, idx: rng.int(3) };
+    case 'g.traitRetreat': return { t };
+    case 'g.combatSpeed': return { t, speed: 1 + rng.int(2) };
     case 'g.art': return { t, itemUid: uid(), row: rng.int(19), col: rng.int(21) };
     case 'g.reward': case 'g.choice': return { t, idx: rng.int(6) };
     case 'g.ready': return { t, ready: rng() < 0.4 };

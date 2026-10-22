@@ -185,6 +185,7 @@
 
 import { randomBytes, randomInt } from 'node:crypto';
 import { DIFFICULTIES, ERR, MAX_SEATS, MIN_SEATS, MAX_SPECTATORS, SPECTATORS_DEFAULT, ROOM_CODE_LEN, modeIdFor, maxSeatsFrom, clampSeats } from '../shared/constants.js'; // [local-patch 2026-10-21] +SPECTATORS_DEFAULT
+import { isSoloRoomMode } from '../shared/infiniteMode.js'; // [local-patch 2026-10-22] 超限模拟也是单人房
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges, PACK_MSG_LIMITS, CHAT_LIMITS } from '../shared/protocol.js';
 import { modSetOf, isModId, modSetDrift } from '../shared/modIdentity.js';
 import { normalizeSupportConfig, checkSupport, supportPicker, supportCapacity, supportTiers } from '../shared/support.js';
@@ -1270,7 +1271,7 @@ export class Lobby {  /**
     this.matchmake.onDisconnect(session);
     const room = this.roomOf(session);
     // a solo run may be resumed within singleReconnectTime (24 h); everything else keeps the registry's window
-    session.resumeWindowMs = room && room.match && room.mode === 'solo' ? this.soloResumeWindowMs() : null;
+    session.resumeWindowMs = room && room.match && isSoloRoomMode(room.mode) ? this.soloResumeWindowMs() : null;
     if (!room) return;
     const player = room.seatOf(session.playerId);
     const seat = player || room.spectatorOf(session.playerId);
@@ -1332,6 +1333,8 @@ export class Lobby {  /**
   create(session, { mode, difficulty, mods, modIds, chatMode, seatCap, test } = {}) {
     // A test room exists only when the process switch allowed it. The check runs before the room is built.
     if (test === true && this.testEnabled !== true) return fail(ERR.TEST_DISABLED);
+    // [local-patch 2026-10-22] 超限模拟只玩原版（上游同款）：插件房的内容组合与超限的数据改写互相踩，直接不带模组。
+    if (mode === 'solo_infinite') modIds = [];
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     const gate = this.checkModSet({ mods });
@@ -1439,7 +1442,7 @@ export class Lobby {  /**
     }
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     if (room.match) return fail(ERR.ROOM_STARTED);
-    if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
+    if (isSoloRoomMode(room.mode)) return fail(ERR.ROOM_FULL, 'solo room');
     // 每名真人须同意（W7, DESIGN §28.53）：**占了玩家座位**就要先对**这一份**字节表态。判在占座**之前**，所以
     // 没同意的人进不去（不是「进来了但只能看着」）。AI 与观战者不在这一条线上（他们走不到这里：AI 由 `addBot`
     // 建座位，观战者走 `spectate`）。
@@ -1486,7 +1489,7 @@ export class Lobby {  /**
       return OK;
     }
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
-    if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
+    if (isSoloRoomMode(room.mode)) return fail(ERR.ROOM_FULL, 'solo room');
     if (room.spectators.length >= MAX_SPECTATORS) return fail(ERR.ROOM_FULL, 'no free spectator seat');
     if (room.spectators.length >= (room.spectatorCap ?? SPECTATORS_DEFAULT)) return fail(ERR.ROOM_FULL, 'no free spectator seat'); // [local-patch 2026-10-21] the host's dial
     if (cur) this.removeMember(cur, session.playerId);
@@ -1561,7 +1564,7 @@ export class Lobby {  /**
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.code !== code) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
-    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no spectator seats');
+    if (isSoloRoomMode(room.mode)) return fail(ERR.BAD_TARGET, 'solo rooms have no spectator seats');
     if (room.spectatorCap !== cap) {
       this.dropReplay(room, session.playerId);
       room.spectatorCap = cap;
@@ -1594,7 +1597,7 @@ export class Lobby {  /**
     if (!room || room.code !== code) return fail(ERR.NOT_IN_ROOM, `you are not in room ${code}`);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'a solo room has exactly one seat');
+    if (isSoloRoomMode(room.mode)) return fail(ERR.BAD_TARGET, 'a solo room has exactly one seat');
     const ceiling = this.opts.maxSeats;
     if (!Number.isInteger(seatCap) || seatCap < MIN_SEATS || seatCap > ceiling) {
       return fail(ERR.BAD_MSG, `seatCap is not a seat count this server allows (an integer in [${MIN_SEATS}, ${ceiling}])`);
@@ -1620,7 +1623,7 @@ export class Lobby {  /**
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
-    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no AI teammates');
+    if (isSoloRoomMode(room.mode)) return fail(ERR.BAD_TARGET, 'solo rooms have no AI teammates');
     this.dropReplay(room, session.playerId);
     if (room.aiPicksLast !== on) {
       room.aiPicksLast = on;
@@ -1959,7 +1962,7 @@ export class Lobby {  /**
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
     if (room.match) return fail(ERR.ROOM_STARTED);
     this.dropReplay(room, session.playerId);
-    if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo rooms cannot have AI teammates');
+    if (isSoloRoomMode(room.mode)) return fail(ERR.ROOM_FULL, 'solo rooms cannot have AI teammates');
     const idx = room.freeSeat();
     if (idx < 0) return fail(ERR.ROOM_FULL);
     const used = new Set(room.seats.filter((s) => s && s.isBot).map((s) => s.name));
@@ -2035,7 +2038,7 @@ export class Lobby {  /**
     // a room with gameplay plugins starts once every player's page has loaded and checked its content (the host's too)
     if (room.modded && humans.some((s) => s.content !== 'ready')) return fail(ERR.CONTENT_NOT_READY);
     const bots = room.seats.filter((s) => s && s.isBot);
-    if (humans.length < 1 || (room.mode === 'solo' && (humans.length !== 1 || bots.length > 0))) {
+    if (humans.length < 1 || (isSoloRoomMode(room.mode) && (humans.length !== 1 || bots.length > 0))) {
       return fail(ERR.BAD_MSG, 'invalid seat configuration');
     }
     const key = session.limitKey || null;
@@ -2440,7 +2443,7 @@ export class Lobby {  /**
         // a plugin mode the host chose (header "Gameplay plugins"), else the official mode of the difficulty
         modeId: room.content?.modeId || modeIdFor(room.mode, room.difficulty),
         // 「AI 队友最后选择」 (GitHub #338): fixed for the match
-        aiPicksLast: room.mode !== 'solo' && room.aiPicksLast === true,
+        aiPicksLast: !isSoloRoomMode(room.mode) && room.aiPicksLast === true, // [local-patch 2026-10-22] isSoloRoomMode
         seats,
         // the spectator seats (header): watched like eliminated players, never players
         spectators: room.spectators.map((s) => s.playerId),

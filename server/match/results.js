@@ -120,7 +120,16 @@ export function buildResult(m, outcome) {
   const { victory, hiddenReached, hiddenCleared } = outcome;
   const players = [...m.players.values()].sort((a, b) => a.seat - b.seat);
   const titles = assignTitles(gd, players, victory);
-  const teamRounds = victory ? gd.bossRound + (hiddenCleared ? 1 : 0) : Math.max(0, Math.min(m.round, gd.bossRound) - 1);
+  // [local-patch 2026-10-22] 业主 2026-10-19/20：主动撤退（reason 'retreat'）带自己的 roundsPassed；
+  // 超限模拟（solo_infinite）没有 `bossRound` 这个概念 —— gamedata.bossRound 对它是普通模式的 14，
+  // 拿它去夹 m.round 会把「打到 R30」显示成 13。超限按实际打到的回合算：失败 = 已通过的回合（round − 1），
+  // 胜利 = 打到的回合（撤退会自己传 outcome.roundsPassed，那条路本来就对）。
+  const isInfinite = !!m.isInfinite;
+  const teamRounds = Number.isInteger(outcome.roundsPassed)
+    ? outcome.roundsPassed
+    : (isInfinite
+      ? (victory ? Math.max(0, m.round) : Math.max(0, m.round - 1))
+      : (victory ? gd.bossRound + (hiddenCleared ? 1 : 0) : Math.max(0, Math.min(m.round, gd.bossRound) - 1)));
   const rows = players.map((ps) => {
     const roundsPassed = !ps.alive && ps.eliminatedRound != null ? Math.max(0, ps.eliminatedRound - 1) : teamRounds;
     const lineup = boardOrder(ps.board).filter((x) => x.piece.kind === 'chess').map(({ r, c, piece }) => {
@@ -186,6 +195,9 @@ export function buildResult(m, outcome) {
     variant: m.variant === true,
     durationMs: Math.max(0, m.sched.now() - m.startedAt),
     players: rows,
+    // [local-patch 2026-10-22] 超限模拟（上游 0.3.1.1）：结算页据此显示「超限」徽记、回合计不上 /14 的帽子；
+    // lastRound 置 null —— 无限模式没有「最后一回合」。
+    ...(m.isInfinite ? { isInfinite: true, lastRound: null } : {}),
   };
   // A test match is marked on the settlement the replay stores. The keys are absent otherwise, so a normal
   // result stays byte-identical. Test results award nothing and are never persisted by the client.

@@ -651,7 +651,8 @@ export const C2S = {
     noReplace: isBool, claimAt: (v) => isNum(v, 0, Number.MAX_SAFE_INTEGER), $optional: ['token', 'version', 'auth', 'password', 'noReplace', 'claimAt'] },
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
   'room.create': {
-    mode: (v) => v === 'solo' || v === 'coop',
+    // [local-patch 2026-10-22] +`solo_infinite`（超限模拟）：单人房的无限轮次变体
+    mode: (v) => v === 'solo' || v === 'coop' || v === 'solo_infinite',
     difficulty: (v) => DIFFICULTIES.includes(v),
     mods: (v) => v == null || isModDigest(v),
     // the room's own mod set (W-A, DESIGN §28.9): pack ids the server has loaded, sorted+deduped server-side.
@@ -888,6 +889,10 @@ export const C2S = {
   // unequip (DESIGN §36.15): one equipped item back to the hand, else the visible temp window. Official rooms refuse it.
   'g.reward': { idx: (v) => isInt(v, 0, 5) },
   'g.choice': { idx: (v) => isInt(v, 0, 5), choiceId: isId, $optional: ['choiceId'] },
+  // [local-patch 2026-10-22] 超限的词条抉择（0..2 三选一）与右下角的【战术撤退】、战斗内倍速开关（1 = 常速，2 = 双倍）
+  'g.traitChoice': { idx: (v) => isInt(v, 0, 2) },
+  'g.traitRetreat': {},
+  'g.combatSpeed': { speed: (v) => v === 1 || v === 2 },
   // a plugin interaction window (PLUGIN API v2, docs/PLUGINS.md §10b): offerId is the window's declared id, idx the
   // slot picked; g.offerRefresh redraws one slot (the window's own `refresh.perSlot` bounds how often). The host
   // applies the window's declared effect primitive — a plugin never receives these messages itself.

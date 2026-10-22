@@ -371,3 +371,7 @@ span.settle__nexticon .icon { width: .3rem; height: .3rem; }
   .settle *, .settle *::before, .settle *::after { animation: none; }
   .sintro { display: none; }
 }
+
+
+/* [local-patch 2026-10-22] 超限模拟的结算徽记（紫色调同 HUD 的 --inf 系列） */
+.smode__inf { position: absolute; right: .08rem; bottom: .06rem; font: 700 .11rem/1 var(--font-num, system-ui); letter-spacing: .06em; color: var(--inf-300, #e2d4ff); background: var(--inf-a35, rgba(168, 85, 247, .35)); border-radius: .08rem; padding: .03rem .07rem; }
