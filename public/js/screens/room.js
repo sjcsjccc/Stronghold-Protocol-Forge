@@ -66,6 +66,8 @@ import { SearchPanel, FoundPanel } from '../ui/matchFlow.js';
 import { usePresence, useRise, afterLeave } from '../ui/transitions.js';
 // [local-patch 2026-10-22] the room's text channel (room.chat, server/lobby.js chat) — the in-match one is game.js's
 import { ChatBox } from '../ui/chatBox.js';
+// [local-patch 2026-10-22] 超限模拟（solo_infinite）也是单人房：座位形状 / 邀请 / 座位数全部按 solo 走
+import { isSoloRoomMode, isInfiniteMode } from '../../../shared/infiniteMode.js';
 import { t, tc } from '../../../shared/i18n.js';
 
 const MAX_SEATS = Number(SEAT_CONST.MAX_SEATS) || 4;
@@ -94,7 +96,7 @@ const MAX_RENDERED_SEATS = 256;
  */
 export function normalizeSeats(room) {
   const declared = room?.seatCap;
-  const cap = room?.mode === 'solo' ? 1
+  const cap = isSoloRoomMode(room?.mode) ? 1 /* [local-patch 2026-10-22] */
     : (Number.isInteger(declared) && declared >= 1 ? Math.min(declared, MAX_RENDERED_SEATS) : MAX_SEATS);
   const src = Array.isArray(room?.seats) ? room.seats : [];
   const out = [];
@@ -150,7 +152,7 @@ export function roomFacts(room, myId) {
  * @returns {{ on: boolean, editable: boolean } | null}
  */
 export function aiLastOption(room, myId) {
-  if (!room || room.mode === 'solo') return null;
+  if (!room || isSoloRoomMode(room.mode)) return null; // [local-patch 2026-10-22] 超限也不发邀请
   return { on: room.aiPicksLast === true, editable: room.hostId != null && room.hostId === myId };
 }
 
@@ -225,7 +227,7 @@ function CardPicker({ current, list, m, onPick, onClose }) {
  * @returns {{ min: number, max: number, value: number } | null}
  */
 export function seatCapRoomRange(room, serverMax) {
-  if (!room || room.mode === 'solo') return null;
+  if (!room || isSoloRoomMode(room.mode)) return null; // [local-patch 2026-10-22] 超限也不发邀请
   const seats = normalizeSeats(room);
   const cap = seats.length;
   const ceiling = Number.isInteger(serverMax) && serverMax >= 1 ? serverMax : MAX_SEATS;
@@ -432,7 +434,7 @@ function RoomProtocol({ room, variant, onClose, onPick, busy, leaving = false })
 
 /** ⚙ of the bottom pill: 私密房间, 人数上限 (with the 10-seat constants), AI 队友最后选择, 无限火力 branch. */
 function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSeatCap, onSpecCap, onAiLast, onVariant, onClose, leaving = false }) {
-  const coop = room.mode !== 'solo';
+  const coop = !isSoloRoomMode(room.mode); // [local-patch 2026-10-22] solo_infinite 渲染成独立模拟页
   const host = facts.isHost;
   useEffect(() => {
     const away = (e) => { if (!e.target.closest?.('.rs-opts, .rs-pill__gear')) onClose(); };
@@ -721,7 +723,7 @@ export function RoomScreen() {
   useEffect(() => { if (!found) return undefined; const id = setTimeout(() => alive.current && setFound(false), 1900); return () => clearTimeout(id); }, [found]);
 
   const online = conn.status === 'online';
-  const coop = room ? room.mode !== 'solo' : false;
+  const coop = room ? !isSoloRoomMode(room.mode) : false; // [local-patch 2026-10-22]
   const facts = room ? roomFacts(room, me.playerId) : null;
   const searchable = CAN_QUEUE && !!room && coop && facts.isHost && room.private !== true && facts.seats.length <= DEFAULT_SEATS && !room.inMatch;
   const firepower = room?.random === true;
