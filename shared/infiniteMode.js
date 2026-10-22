@@ -5,6 +5,14 @@
 export const SOLO_INFINITE = 'solo_infinite';
 
 /**
+ * [local-patch 2026-10-23] 超限模拟的**联机**房间模式（业主 2026-10-23：超限上联机）。与 solo_infinite 共用
+ * 全部超限规则（infiniteWaves/traitDraft/infiniteRule/层数上限 9999），但房间是同盟形状：1–4 名博士各自布防、
+ * 共享同一份波次与词条池、Boss 轮按对配对、漏怪走联防。房间座位上限钉在 MAX_SEATS（4）——参战者超过 4
+ * 会进变体（per-squad 联防/机变），词条抉择没有小队变体，直接不许（Lobby.setSeatCap 的闸）。
+ */
+export const INFINITE = 'infinite';
+
+/**
  * 超限模拟单次伤害限额（业主 2026-10-20：99,999,999 → 9,999,999,999）。
  * 这是**单次**伤害的上限，不是总伤害；9,999,999,999 仍在 Number 的安全整数范围内
  * （2^53 ≈ 9.007e15），也远小于 Boss 血池随轮次的增长。
@@ -37,12 +45,17 @@ export function isSoloRoomMode(mode) {
 }
 
 /**
+ * 是否超限模拟（solo_infinite 单人版与 infinite 联机版都算）。超限规则开关（波次/词条/数值）都看它；
+ * 「是不是单人房」要看 isSoloRoomMode —— infinite 是盟形状的房间。
  * @param {string|undefined|null} mode
  * @returns {boolean}
  */
 export function isInfiniteMode(mode) {
-  return mode === SOLO_INFINITE;
+  return mode === SOLO_INFINITE || mode === INFINITE;
 }
+
+/** 房间口径的同一判定（lobby 的座位/模组闸用这个名字读起来更顺） */
+export const isInfiniteRoomMode = isInfiniteMode;
 
 /**
  * 随着波次计算敌方控制抗性 (Tenacity Scaling)

@@ -22,7 +22,7 @@ const SPECIAL_VIEW = {
   xi: { title: '气定神闲Ⅲ' /* i18n-ignore: server-side data mirror */, img: '/ui/enemy-special/enemy-xi.png' },
 };
 
-export function TraitOverlay({ trait, myId, busyIdx = null, onPick, onRetreat = null }) {
+export function TraitOverlay({ trait, myId, busyIdx = null, onPick, onRetreat = null, turnName = null }) {
   const [phase, setPhase] = useState('enter');   // enter → idle → choosing → moving → folder
   const [picked, setPicked] = useState(null);
   const cardsRef = useRef(null);
@@ -32,6 +32,10 @@ export function TraitOverlay({ trait, myId, busyIdx = null, onPick, onRetreat = 
   const neg = trait?.polarity === 'neg';
   const cards = Array.isArray(trait?.cards) ? trait.cards : [];
   const myTurn = trait?.turn === myId;
+  // [local-patch 2026-10-23] 联机超限：picks[playerId]=idx 的已选徽记 + 非我的回合显示等待条
+  const picks = trait?.picks || {};
+  const untimed = !!trait?.untimed;
+  const pickedIdxs = new Set(Object.values(picks));
 
   const after = (ms, fn) => { timers.current.push(setTimeout(fn, ms)); };
   useEffect(() => () => { for (const id of timers.current) clearTimeout(id); timers.current = []; }, []);
@@ -103,7 +107,7 @@ export function TraitOverlay({ trait, myId, busyIdx = null, onPick, onRetreat = 
     <div ref=${cardsRef} class=${'traitov__cards' + (phase !== 'enter' ? ' is-ready' : '')}>
       ${cards.map((c, i) => {
         const sp = c.special ? SPECIAL_VIEW[c.special] : null;
-        return html`<div class=${'tcard' + (neg ? ' tcard--neg' : '') + (c.special ? ' tcard--special' : '')}
+        return html`<div class=${'tcard' + (neg ? ' tcard--neg' : '') + (c.special ? ' tcard--special' : '') + (pickedIdxs.has(i) ? ' is-picked' : '') + (!myTurn ? ' is-waiting' : '')}
             style=${sp ? `--sigil:url("${sp.img}")` : ''} key=${i}
             onClick=${() => choose(i)} role="button" tabindex="0">
           <span class="tcard__ring tcard__ring--glow"></span><span class="tcard__ring"></span>
@@ -143,6 +147,12 @@ export function TraitOverlay({ trait, myId, busyIdx = null, onPick, onRetreat = 
         </div>`;
       })}
     </div>
+    ${/* [local-patch 2026-10-23] 联机超限：非我的回合显示等待条（超时服务端随机代选，untimed 时不提示） */
+      !myTurn ? html`<div class="traitov__wait" data-testid="trait-wait">
+        <span class="traitov__wait-dot"></span>
+        ${t('轮到')} <b>${turnName || t('其他博士')}</b>${t('抉择…')}
+        ${untimed ? null : html`<span class="traitov__wait-hint">${t('超时将自动随机代选')}</span>`}
+      </div>` : null}
     ${onRetreat && !picked ? html`<button type="button" class="traitov__retreat" onClick=${onRetreat}
       title=${t('以当前回合结算本局（不再继续后面的轮次）')}>
       <span class="traitov__retreat-ico">⏻</span><span>${t('战术撤退')}</span>

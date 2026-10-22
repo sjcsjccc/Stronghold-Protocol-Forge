@@ -170,9 +170,10 @@ export class MatchViews {
       };
     }
     // [local-patch 2026-10-22] 超限的词条抉择视图（publicTraitView 形状照上游 0.3.1.1）
+    // [local-patch 2026-10-23] +untimed / turnDeadline（联机超限的轮转倒计时；soloUntimed 时客户端不画条）
     if (this.phase === PHASE.TRAIT_DRAFT && this.trait) {
       const t = this.trait;
-      v.trait = { round: t.round, polarity: t.polarity, cards: t.cards.slice(), turn: this.traitTurn(), picks: { ...t.picks } };
+      v.trait = { round: t.round, polarity: t.polarity, cards: t.cards.slice(), turn: this.traitTurn(), picks: { ...t.picks }, untimed: !!t.untimed, turnDeadline: t.turnDeadline || 0 };
     }
     if (this.phase === PHASE.SP_DRAFT && this.sp) {
       const s = this.sp;

@@ -283,6 +283,8 @@ function MatchScreen() {
   const mode = phaseMode(phase);
   const combat = isCombatPhase(phase);
   const solo = roomSolo || String(pub?.modeId || '').includes('single');
+  // [local-patch 2026-10-23] 战术撤退仅单人超限（solo_infinite）可用；联机超限（infinite）的词条阶段没有这个按钮
+  const soloInfinite = useStore((s) => s.room?.mode) === 'solo_infinite';
   const players = sortedPlayers(pub);
   const meP = players.find((p) => p.playerId === myId) || null;
   // a spectator seat watches like an eliminated player (it has no m.private and no row in m.public)
@@ -1847,10 +1849,11 @@ function MatchScreen() {
     </div>
 
     ${hasOffers && !sp && !personalChoice ? html`<${OfferOverlay} pub=${pub} myId=${myId} readOnly=${spectator || !alive} onAction=${actions.offer} />` : null}
-    ${/* [local-patch 2026-10-22] 超限词条抉择：三选一叠层；战术撤退以当前回合结算本局 */
+    ${/* [local-patch 2026-10-22] 超限词条抉择：三选一叠层；战术撤退以当前回合结算本局（[10-23] 仅单人超限） */
       traitDraft ? html`<${TraitOverlay} trait=${traitDraft} myId=${myId} busyIdx=${traitBusy}
+      turnName=${traitDraft.turn ? (players.find((p) => p.playerId === traitDraft.turn)?.name || null) : null}
       onPick=${async (i) => { setTraitBusy(i); await actions.traitChoice(i); setTraitBusy(null); }}
-      onRetreat=${async () => { if (confirm(t('以当前回合结算本局？'))) await actions.traitRetreat(); }} />` : null}
+      onRetreat=${soloInfinite ? async () => { if (confirm(t('以当前回合结算本局？'))) await actions.traitRetreat(); } : null} />` : null}
     ${sp ? html`<${ChoiceOverlay} pub=${pub} sp=${sp} myId=${myId} solo=${solo} busyIdx=${spBusy} total=${total}
       onPick=${async (i) => { setSpBusy(i); await actions.choice(i); setSpBusy(null); }} />` : null}
     ${personalChoice ? html`<${ChoiceOverlay} key=${personalChoice.id} pub=${pub} sp=${personalChoice} myId=${myId} solo=${solo} personal=${true}

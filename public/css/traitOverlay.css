@@ -292,3 +292,20 @@
   background: rgba(10,16,14,.72);
   background:color-mix(in srgb,var(--neg) 12%,rgba(10,16,14,.72))}
 .traitov__retreat-ico{font-size:14px;line-height:1;opacity:.8}
+
+/* ── [local-patch 2026-10-23] 联机超限的轮转等待态 ─────────────────────────
+   已选卡（别人的选择落定）亮出「已选择」徽记；非我的回合整排卡片压暗、不接点击；
+   底部等待条报出当前抉择者。超时候代选由服务端做（与机变同纪律）。 */
+.tcard.is-picked .tcard__pick{opacity:1}
+.tcard.is-waiting{cursor:default;filter:brightness(.62) saturate(.8)}
+.tcard.is-waiting:hover{transform:none}
+.traitov__wait{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:8;
+  display:inline-flex;align-items:center;gap:8px;padding:9px 18px;
+  font:600 13px/1 var(--font-cjk);letter-spacing:.05em;color:var(--text-hi);
+  background:rgba(8,13,11,.78);border:1px solid rgba(120,255,214,.22);border-radius:999px;
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.traitov__wait b{color:var(--pos-hi, #7dffce)}
+.traitov__wait-dot{width:8px;height:8px;border-radius:50%;background:var(--pos,#38e0a2);
+  box-shadow:0 0 8px var(--pos,#38e0a2);animation:traitov-wait 1.2s ease-in-out infinite}
+.traitov__wait-hint{color:var(--text-lo);font-weight:500;font-size:11.5px}
+@keyframes traitov-wait{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}

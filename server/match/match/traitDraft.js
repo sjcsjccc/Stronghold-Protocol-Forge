@@ -8,6 +8,7 @@
 // 普通模式完全不经过这里（Match.isInfinite 判断）。
 
 import { PHASE, ERR } from '../../../shared/constants.js';
+import { DELAYS } from './common.js';
 import { drawTraitCards, traitFlags, TRAIT_SETTLE, SPECIAL_STATS, SPECIALS } from '../traits.js';
 
 const OK = { ok: true };
@@ -36,6 +37,10 @@ function isInfiniteBossRoundSafe(r) {
 export class MatchTraitDraft {
   /**
    * 开一次词条抉择。极性按「第几次」奇偶交替：第 1 次正面、第 2 次负面……
+   * [local-patch 2026-10-23] 联机超限（mode='infinite'，Match.mode='coop'）：同一份三选一**整队共享**——
+   * 轮流各选一张，词条全进同一份 traitMods（整队吃同一套词条），选中的怪跟着下一轮的共享波次进每个人的板。
+   * 轮转/限时/超时代选照抄 MatchSpDraft（enterSpDraft）： coop 洗牌 + humansFirst；soloUntimed（solo 或
+   * 只有一个人类）不受时限 —— 单人路径与旧实现逐字节同效（order 单人、untimed、选完即 finish）。
    * @param {number} round
    */
   enterTraitDraft(round = this.round) {
@@ -46,8 +51,13 @@ export class MatchTraitDraft {
     const cards = drawTraitCards(this.rngMeta, polarity);
     if (!cards.length) { this.enterPrep(); return; }
     this.phase = PHASE.TRAIT_DRAFT;
-    this.trait = { round, polarity, cards, idx: 0, order: alive.map((p) => p.playerId), picks: {} };
-    this.setDeadline(0);   // 单人无时限（超限是单人模式）
+    let order = alive.map((p) => p.playerId);
+    if (!this.isSolo) this.rngMeta.shuffle(order);
+    order = this.humansFirst(order);   // 「AI 队友最后选择」(opts.aiPicksLast)：关着时是恒等
+    const untimed = this.soloUntimed;
+    this.trait = { round, polarity, cards, idx: 0, order, picks: {}, untimed, turnDeadline: 0 };
+    this.setDeadline(0);
+    this.startTraitTurn();
     this.markPublic();
     return true;
   }
@@ -59,11 +69,57 @@ export class MatchTraitDraft {
   }
 
   /**
+   * 推进到下一位抉择者：跳过淘汰/已选的；轮转耗尽就结draft。非 soloUntimed 时给当前抉择者上
+   * gd.timer 的回合倒计时，超时由服务端**随机代选**（与机变同纪律）——挂机/掉线不卡死整队。
+   */
+  startTraitTurn() {
+    const t = this.trait;
+    if (!t) return;
+    while (t.idx < t.order.length) {
+      const ps = this.players.get(t.order[t.idx]);
+      if (ps && ps.alive && t.picks[ps.playerId] == null) break;
+      t.idx++;
+    }
+    if (t.idx >= t.order.length) { this.setDeadline(0); this.finishTraitDraft(); return; }
+    const token = (this._traitTurnToken = (this._traitTurnToken || 0) + 1);
+    if (!t.untimed) {
+      const first = t.idx === 0;
+      const secs = first ? this.gd.timer('spFirst') : this.gd.timer('spTurn');
+      this.setDeadline(secs, () => {
+        if (this.phase !== PHASE.TRAIT_DRAFT || token !== this._traitTurnToken || !this.trait) return;
+        const cur = this.players.get(this.traitTurn());
+        if (!cur) return;
+        this.pickTrait(cur, this.rngMeta.pick([...this.trait.cards.keys()]));
+      });
+      t.turnDeadline = this.deadline;
+    } else {
+      this.setDeadline(0);
+    }
+    const cur = this.players.get(this.traitTurn());
+    if (cur && cur.botControlled) this.scheduleTraitBot();
+    this.markPublic();
+  }
+
+  /** AI 队友的代选（scheduleSpBot 同款）：短延迟后随机一张——词条是整队共享的，随机即可。 */
+  scheduleTraitBot() {
+    const token = this._traitTurnToken;
+    this.later(this.scaled(DELAYS.BOT_ACTION), () => {
+      if (this.phase !== PHASE.TRAIT_DRAFT || token !== this._traitTurnToken || !this.trait) return;
+      const ps = this.players.get(this.traitTurn());
+      if (!ps || !ps.botControlled) return;
+      this.pickTrait(ps, this.rngMeta.pick([...this.trait.cards.keys()]));
+    });
+  }
+
+  /**
    * 主动战术撤退（业主 2026-10-19）：词条抉择界面右下角的按钮，点一下就以**当回合**结算。
    * 只记录已通过的轮次，不算失败，也不继续下一轮。
+   * [local-patch 2026-10-23] 仅限单人超限：联机局这一下会把整队的无限跑结束，按钮在 coop 里不渲染，
+   * 服务端也拒掉。
    * @param {object} ps
    */
   retreatNow(ps) {
+    if (this.mode !== 'solo') return fail(ERR.BAD_TARGET, 'retreat is a solo-infinite control');
     if (this.phase !== PHASE.TRAIT_DRAFT) return fail(ERR.WRONG_PHASE);
     if (!ps || !ps.alive) return fail(ERR.ELIMINATED);
     // 以「这一轮的 Boss 已清」作为通过轮次（trait.round 是词条归属的回合）
@@ -99,8 +155,8 @@ export class MatchTraitDraft {
 
     t.picks[ps.playerId] = idx;
     t.idx++;
-    if (t.idx >= t.order.length) this.finishTraitDraft();
-    else this.markPublic();
+    // 推进轮转（耗尽时内部同步 finishTraitDraft —— 单人选完即走，与旧实现同效）
+    this.startTraitTurn();
     return OK;
   }
 

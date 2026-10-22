@@ -36,21 +36,20 @@ function drive(h, pred) {
 }
 
 describe('超限模拟 (solo_infinite)', () => {
-  test('模式开关：isInfinite 点亮、公开视图带 isInfinite/speedPref、盟约层数上限 9999（对局存活期间）', () => {
-    const h = makeMatch({ mode: 'solo_infinite', difficulty: 'HARD', humans: 1, seed: 9301, fake: true }).start();
+  test('模式开关：isInfinite 点亮、加速走统一房主倍速、盟约层数上限 9999（对局存活期间）', () => {
+    const h = makeMatch({ mode: 'solo_infinite', difficulty: 'HARD', humans: 1, seed: 9301, fake: true, hostId: 'p_0' }).start();
     const m = h.m;
     assert.equal(m.isInfinite, true);
     assert.equal(m.mode, 'solo', 'solo_infinite plays on the solo seat shape');
     assert.equal(m.gd.overlimit, true, 'R1–R15 uses the ABYSS curve');
     const pub = m.publicView();
     assert.equal(pub.isInfinite, true);
-    assert.equal(pub.speedPref, 1);
-    assert.deepEqual(m.handle([...m.players.keys()][0], { t: 'g.combatSpeed', speed: 2 }), { ok: true });
-    assert.equal(m.publicView().speedPref, 2, 'the in-battle speed switch moved');
-    assert.equal(m.publicView().gameSpeed, 4, '2× = the base GAME_SPEED doubled');
+    // [local-patch 2026-10-22] 加速与另两个模式统一：房主倍速 g.matchSpeed（×1–4）在超限局照常生效
+    assert.deepEqual(m.handle([...m.players.keys()][0], { t: 'g.matchSpeed', rate: 3 }), { ok: true });
+    assert.equal(m.publicView().speedPref, undefined, 'the upstream speed toggle is gone');
     // the live bond-layer cap is 9999 for the overlimit match's lifetime …
     assert.equal(layerGainRoom(998, 5), 5, 'past the normal 999 cap the room continues');
-    assert.equal(m.handle([...m.players.keys()][0], { t: 'g.matchSpeed', rate: 2 }).error, 'WRONG_PHASE', 'the host match-speed is inert in an overlimit match');
+    assert.deepEqual(m.handle([...m.players.keys()][0], { t: 'g.matchSpeed', rate: 2 }), { ok: true });
     m.dispose();
     assert.equal(layerGainRoom(998, 5), 1, '… and back to 999 after dispose');
   });
@@ -106,5 +105,60 @@ describe('超限模拟 (solo_infinite)', () => {
     assert.ok(h.ended, 'a normal solo match still ends');
     assert.notEqual(m.phase, PHASE.TRAIT_DRAFT, 'no trait draft in the normal mode');
     assert.ok(!Array.isArray(m.traitMods) || m.traitMods.length === 0);
+  });
+});
+
+describe('超限模拟·联机 (infinite)', () => {
+  test('盟形状：mode=coop + isInfinite；词条轮流选、非回合拒绝、整队共享 traitMods、选中的怪都进下一轮；战术撤退拒绝', () => {
+    const h = makeMatch({
+      mode: 'infinite', difficulty: 'HARD', humans: 2, seed: 77, fake: true, hostId: 'p_0',
+      script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 20000 } : { duration: 1, leaks: {} }),
+    }).start();
+    const m = h.m;
+    h.autoHumans();
+    assert.equal(m.isInfinite, true, 'the coop-shaped infinite lights the same switches');
+    assert.equal(m.mode, 'coop', 'infinite plays on the coop seat shape');
+    assert.equal(m.gd.overlimit, true, 'the ABYSS curve applies from R1');
+    const [p0, p1] = [...m.players.keys()];
+
+    drive(h, () => m.phase === 'TRAIT_DRAFT' || h.ended != null);
+    assert.equal(m.phase, PHASE.TRAIT_DRAFT, 'the R20 boss cleared → the shared draft opens');
+    const t = m.trait;
+    assert.equal(t.order.length, 2, 'both players hold a turn');
+    assert.equal(t.untimed, false, 'two humans: the draft is timed (auto-pick on timeout)');
+    const first = m.traitTurn();
+    const second = first === p0 ? p1 : p0;
+    assert.equal(m.handle(second, { t: 'g.traitChoice', idx: 0 }).error, 'BAD_TARGET', 'not your turn');
+    assert.deepEqual(m.handle(first, { t: 'g.traitChoice', idx: 0 }), { ok: true });
+    assert.equal(m.traitMods.length, 1, 'picks land in the SHARED match-level pool');
+    assert.equal(m.traitTurn(), second, 'the turn advances to the other player');
+    assert.deepEqual(m.handle(second, { t: 'g.traitChoice', idx: 1 }), { ok: true });
+    assert.equal(m.traitMods.length, 2, 'both picks stack in the shared pool');
+    assert.equal(m.trait, null, 'the draft closes after the last pick');
+
+    drive(h, () => m.round >= 21 && (m.phase === 'PREP' || m.phase === 'ROUND_START'));
+    assert.equal(m.round, 21, 'the next round starts only after both picks');
+    assert.equal(m.traitSpawnFor(21).length, 2, 'both chosen mobs spawn into the shared wave');
+    assert.equal(m.handle(p0, { t: 'g.traitRetreat' }).error, 'BAD_TARGET', 'retreat is a solo-infinite control');
+  });
+
+  test('单人类的联机超限不受时限（soloUntimed），AI 队友由服务端代选', () => {
+    const h = makeMatch({
+      mode: 'infinite', difficulty: 'HARD', humans: 1, bots: 1, seed: 31, fake: true, hostId: 'p_0',
+      script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 20000 } : { duration: 1, leaks: {} }),
+    }).start();
+    const m = h.m;
+    h.autoHumans();
+    assert.equal(m.soloUntimed, true, 'one human + one AI: nobody waits on anybody');
+    drive(h, () => m.phase === 'TRAIT_DRAFT' || h.ended != null);
+    assert.equal(m.phase, PHASE.TRAIT_DRAFT, 'the draft opens after the R20 boss');
+    assert.equal(m.trait.untimed, true, 'untimed draft for the lone human');
+    // 人类选完 → 轮到 AI；AI 的代选由 scheduleTraitBot 定时驱动（drive 的 sched 会推它走）
+    const human = [...m.players.keys()].find((id) => !m.players.get(id).isBot);
+    assert.deepEqual(m.handle(human, { t: 'g.traitChoice', idx: 0 }), { ok: true });
+    const botId = [...m.players.keys()].find((id) => m.players.get(id).isBot);
+    assert.equal(m.traitTurn(), botId, 'the AI teammate holds the next turn');
+    drive(h, () => m.trait == null || h.ended != null);
+    assert.equal(m.traitMods.length, 2, 'the bot pick landed in the shared pool');
   });
 });

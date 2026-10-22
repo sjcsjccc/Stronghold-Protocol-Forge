@@ -206,7 +206,7 @@
 
 import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS, setBondLayerCap } from '../../shared/constants.js';
 import { MatchTraitDraft } from './match/traitDraft.js'; // [local-patch 2026-10-22] 超限模拟的「词条抉择」阶段
-import { isSoloRoomMode, SOLO_INFINITE, INFINITE_BOND_LAYER_CAP } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-22]
+import { isSoloRoomMode, isInfiniteMode, INFINITE_BOND_LAYER_CAP } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-22/23] 超限：solo_infinite + infinite(联机)
 import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squad pool sharing width
 // 变体 / 口径层（DESIGN §28.39）：本局的轴表由各包的归一化声明合成，规则就是既有的「包 id 字典序小的赢」。
 import { mergeVariantDecls, variantValue } from '../../shared/variants.js';
@@ -396,8 +396,10 @@ export class Match {
     /**
      * [local-patch 2026-10-22] 超限模拟（房间 mode = `solo_infinite`，shared/infiniteMode.js 的 SOLO_INFINITE）。
      * 按房间模式点亮它；别的模式一律 false，所以不会有任何超限规则漏进普通单机 / 同盟。
+     * [local-patch 2026-10-23] +`infinite`（联机超限）：同一套超限规则，盟形状房间（isSoloRoomMode 不认它，
+     * 所以 Match.mode 走 'coop'，联防/Boss 配对/准备都按同盟既有路径）。
      */
-    this.isInfinite = opts.mode === SOLO_INFINITE;
+    this.isInfinite = isInfiniteMode(opts.mode);
     // 超限的 R1–R15 用绝境的数值曲线（gamedata.baseEnemyScale）
     if (this.gd) this.gd.overlimit = this.isInfinite;
     // 超限局把盟约层数上限抬到 9999（普通模式仍是 999）。恢复放在 platform dispose 里，

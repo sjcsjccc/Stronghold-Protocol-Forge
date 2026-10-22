@@ -652,7 +652,8 @@ export const C2S = {
   ping: { c: (v) => typeof v === 'number' && Number.isFinite(v) },
   'room.create': {
     // [local-patch 2026-10-22] +`solo_infinite`（超限模拟）：单人房的无限轮次变体
-    mode: (v) => v === 'solo' || v === 'coop' || v === 'solo_infinite',
+    // [local-patch 2026-10-23] +`infinite`（超限模拟·联机）：同一套超限规则的盟形状房间（1–4 人，可加 AI）
+    mode: (v) => v === 'solo' || v === 'coop' || v === 'solo_infinite' || v === 'infinite',
     difficulty: (v) => DIFFICULTIES.includes(v),
     mods: (v) => v == null || isModDigest(v),
     // the room's own mod set (W-A, DESIGN §28.9): pack ids the server has loaded, sorted+deduped server-side.

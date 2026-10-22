@@ -2601,5 +2601,12 @@
   "选择敌人": "Chosen enemy",
   "生效范围": "Scope",
   "本局剩余的全部战斗（永久）": "Every remaining battle of this match (permanent)",
-  "已生效": "In effect"
+  "已生效": "In effect",
+  "无上限深层波次推演。领袖限伤放宽，波次抗性与霸体保护激活，可单人挑战或与最多 3 名同伴协同布防。": "Endless deep-wave simulation. Leader hit caps relaxed, wave tenacity and protection active — run it solo or defend together with up to 3 teammates.",
+  "1–4 名博士 · 可联机": "1–4 Doctors · co-op ready",
+  "突破 15 波次 · 共享词条抉择": "Push past wave 15 · shared trait drafts",
+  "轮到": "Turn: ",
+  "其他博士": "another Doctor",
+  "抉择…": " picking…",
+  "超时将自动随机代选": "a random card is auto-picked on timeout"
 }

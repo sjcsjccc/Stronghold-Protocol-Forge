@@ -123,10 +123,11 @@ const MODE_CARDS = [
     points: [N_('1 名博士'), N_('休整期与机变阶段不限时')],
   },
   // [local-patch 2026-10-22] 超限模拟（上游 0.3.1.1）：无上限深层波次推演
+  // [local-patch 2026-10-23] 联机超限（mode='infinite'，业主 2026-10-23）：盟形状房间 1–4 人，原版规则不变
   {
-    id: 'solo_infinite', name: N_('超限模拟'), badge: '∞', en: 'INFINITE SIMULATION', icon: 'cpu',
-    desc: N_('无上限深层波次推演。领袖限伤放宽，波次抗性与霸体保护激活，挑战极限构筑。'),
-    points: [N_('1 名博士 · 独立规则'), N_('突破 15 波次 · 性能抗性自适应')],
+    id: 'infinite', name: N_('超限模拟'), badge: '∞', en: 'INFINITE SIMULATION', icon: 'cpu',
+    desc: N_('无上限深层波次推演。领袖限伤放宽，波次抗性与霸体保护激活，可单人挑战或与最多 3 名同伴协同布防。'),
+    points: [N_('1–4 名博士 · 可联机'), N_('突破 15 波次 · 共享词条抉择')],
   },
   {
     id: 'coop', name: N_('同盟模拟'), en: 'ALLIANCE SIMULATION', icon: 'users',
@@ -241,7 +242,8 @@ export function difficultyInfo(roomMode, difficulty, { random = false, variant =
     ? m.effectDescList.map((e) => String(e).replace(/^[·•\s]+/, '')).filter(Boolean)
     : fallback.effects;
   // 随机模式: the whole run is the variant's rounds (server GameData.applyRandomRounds; variantRounds)
-  const rounds = roomMode === 'solo_infinite'
+  // [local-patch 2026-10-23] isInfiniteMode：solo_infinite 与联机 infinite 都是 ∞ 轮
+  const rounds = isInfiniteMode(roomMode)
     ? '∞'
     : random
     ? (variant === 'endurance' ? RANDOM_MODE.endurance.totalRounds : variant === 'marathon' ? RANDOM_MODE.marathon.totalRounds : RANDOM_MODE.totalRounds)
@@ -1000,7 +1002,7 @@ export function LobbyScreen() {
   const [simulation, setSimulation] = useState(lobbySimulationPreference);
   const [difficulty, setDifficulty] = useState(() => preferredDifficulty(lobbySimulationPreference()));
   const [fpVariant, setFpVariant] = useState(firepowerVariantPreference);
-  const roomMode = simulation === 'solo_infinite' ? 'solo_infinite' : simulation === 'solo' ? 'solo' : 'coop'; // [local-patch 2026-10-22]
+  const roomMode = simulation === 'solo_infinite' ? 'solo_infinite' : simulation === 'infinite' ? 'infinite' : simulation === 'solo' ? 'solo' : 'coop'; // [local-patch 2026-10-22/23]
   const randomMode = simulation === 'firepower';
   const variant = randomMode ? fpVariant : 'blitz';
   const [code, setCode] = useState('');
@@ -1135,7 +1137,7 @@ export function LobbyScreen() {
     if ((m === 'firepower') !== randomMode) setDifficulty(preferredDifficulty(m));
     setSimulation(m);
     savePref('lobby.simulation', m);
-    savePref('lobby.mode', m === 'solo' || m === 'solo_infinite' ? m : 'coop'); // [local-patch 2026-10-22]
+    savePref('lobby.mode', m === 'solo' || m === 'solo_infinite' || m === 'infinite' ? m : 'coop'); // [local-patch 2026-10-22/23]
     savePref('lobby.random', m === 'firepower');
   };
   const pickDifficulty = (d) => {
@@ -1245,12 +1247,12 @@ export function LobbyScreen() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [achOpen, setAchOpen] = useState(false);              // 成就统计 (ui/achievements.js)
   // 同盟模拟 → 选择同盟方式; 独立模拟 / 无限火力 → 选择模拟协议
-  // [local-patch 2026-10-22] 超限模拟：不进难度选择，直接建终极单人房（HARD 曲线起步，R16 起指数膨胀）
+  // [local-patch 2026-10-23] 联机超限：公开房（进缺人同盟列表，好友可密钥加入），1–4 人
   const enterInfiniteMode = () => {
-    pickMode('solo_infinite');
-    run('create', () => net.request('room.create', { mode: 'solo_infinite', difficulty: 'HARD', private: true, modIds: [] }));
+    pickMode('infinite');
+    run('create', () => net.request('room.create', { mode: 'infinite', difficulty: 'HARD', modIds: [] }));
   };
-  const openMode = (m) => { if (m === 'solo_infinite') { enterInfiniteMode(); return; } pickMode(m); if (m === 'coop') setAllyOpen(true); else { setSheetPurpose('create'); setSheetChained(false); setSheetOpen(true); } };
+  const openMode = (m) => { if (m === 'infinite') { enterInfiniteMode(); return; } pickMode(m); if (m === 'coop') setAllyOpen(true); else { setSheetPurpose('create'); setSheetChained(false); setSheetOpen(true); } };
   const openSearch = () => { pickMode('coop'); setSheetChained(allyOpen); setAllyOpen(false); setSheetPurpose('search'); setSheetOpen(true); };
   const modeCard = MODE_CARDS.find((c) => c.id === simulation) || MODE_CARDS[0];
 
@@ -1313,7 +1315,7 @@ export function LobbyScreen() {
         ${maint?.active ? html`<div class="hub-maint">${t('服务器即将维护，暂停开启新的模拟')}</div>` : null}
         <div class="hub-entries__row">
           <${HubEntry} group=${{ icon: 'user', label: t('独立模拟') }} name=${t('独立模拟')} en="SOLO" icon="user" onClick=${() => openMode('solo')} />
-          <${HubEntry} group=${{ icon: 'cpu', label: t('超限模拟') }} name=${t('超限模拟')} en="INFINITE" icon="cpu" badge="∞" tone="purple" onClick=${() => openMode('solo_infinite')} />
+          <${HubEntry} group=${{ icon: 'cpu', label: t('超限模拟') }} name=${t('超限模拟')} en="INFINITE" icon="cpu" badge="∞" tone="purple" onClick=${() => openMode('infinite')} />
           <${HubEntry} group=${{ icon: 'users', label: t('同盟模拟') }} name=${t('同盟模拟')} en="ALLIANCE" icon="users" count=${matchmakingCounts?.total} onClick=${() => openMode('coop')} />
           ${CAN_FIREPOWER ? html`<${HubEntry} name=${t('无限火力')} en="FIREPOWER" icon="dice" badge="1.1" tone="gold" onClick=${() => openMode('firepower')} />` : null}
           ${CAN_QUEUE ? html`<${HubEntry} name=${t('搜寻队友')} en="FIND ALLIES" icon="search" tone="bright" onClick=${openSearch} />` : null}

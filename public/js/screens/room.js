@@ -774,7 +774,8 @@ export function RoomScreen() {
   const soloAlignBlocked = hostStartAlignBlocked({ solo: !coop, align });
   const info = difficultyInfo(room.mode, room.difficulty, { random: firepower, variant });
   const variantName = variant === 'endurance' ? t('持久鏖战') : variant === 'marathon' ? t('最长时赛') : t('快速突袭');
-  const modeName = firepower ? `${RANDOM_MODE_NAME} · ${variantName}` : coop ? t('同盟模拟') : t('独立模拟');
+  // [local-patch 2026-10-23] 联机超限（mode='infinite'，盟形状）也显示「超限模拟」
+  const modeName = firepower ? `${RANDOM_MODE_NAME} · ${variantName}` : isInfiniteMode(room.mode) ? t('超限模拟') : coop ? t('同盟模拟') : t('独立模拟');
   const searchElapsed = facts.isHost && searchSince ? (Date.now() - searchSince) / 1000
     : room.matching?.startedAt ? (serverNow() - room.matching.startedAt) / 1000 : 0;
 

@@ -185,7 +185,7 @@
 
 import { randomBytes, randomInt } from 'node:crypto';
 import { DIFFICULTIES, ERR, MAX_SEATS, MIN_SEATS, MAX_SPECTATORS, SPECTATORS_DEFAULT, ROOM_CODE_LEN, modeIdFor, maxSeatsFrom, clampSeats } from '../shared/constants.js'; // [local-patch 2026-10-21] +SPECTATORS_DEFAULT
-import { isSoloRoomMode } from '../shared/infiniteMode.js'; // [local-patch 2026-10-22] 超限模拟也是单人房
+import { isSoloRoomMode, isInfiniteRoomMode } from '../shared/infiniteMode.js'; // [local-patch 2026-10-22/23] 超限：单人房判定 + 联机超限识别
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges, PACK_MSG_LIMITS, CHAT_LIMITS } from '../shared/protocol.js';
 import { modSetOf, isModId, modSetDrift } from '../shared/modIdentity.js';
 import { normalizeSupportConfig, checkSupport, supportPicker, supportCapacity, supportTiers } from '../shared/support.js';
@@ -1334,7 +1334,8 @@ export class Lobby {  /**
     // A test room exists only when the process switch allowed it. The check runs before the room is built.
     if (test === true && this.testEnabled !== true) return fail(ERR.TEST_DISABLED);
     // [local-patch 2026-10-22] 超限模拟只玩原版（上游同款）：插件房的内容组合与超限的数据改写互相踩，直接不带模组。
-    if (mode === 'solo_infinite') modIds = [];
+    // [local-patch 2026-10-23] +`infinite`（联机超限）：同一条纪律。
+    if (mode === 'solo_infinite' || mode === 'infinite') modIds = [];
     const cur = this.roomOf(session);
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     const gate = this.checkModSet({ mods });
@@ -1599,6 +1600,11 @@ export class Lobby {  /**
     if (room.match) return fail(ERR.ROOM_STARTED);
     if (isSoloRoomMode(room.mode)) return fail(ERR.BAD_TARGET, 'a solo room has exactly one seat');
     const ceiling = this.opts.maxSeats;
+    // [local-patch 2026-10-23] 联机超限的容量闸：参战者 >4 会进变体（per-squad 联防/机变），词条抉择没有
+    // 小队变体 —— 超限房间不许把座位开到 MAX_SEATS 以上（Room 构造默认就是 MAX_SEATS，这里只挡「房内改大」）。
+    if (isInfiniteRoomMode(room.mode) && seatCap > MAX_SEATS) {
+      return fail(ERR.BAD_MSG, `an infinite room holds at most ${MAX_SEATS} seats`);
+    }
     if (!Number.isInteger(seatCap) || seatCap < MIN_SEATS || seatCap > ceiling) {
       return fail(ERR.BAD_MSG, `seatCap is not a seat count this server allows (an integer in [${MIN_SEATS}, ${ceiling}])`);
     }
