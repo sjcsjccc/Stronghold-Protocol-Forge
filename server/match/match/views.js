@@ -88,10 +88,6 @@ export class MatchViews {
       modeId: this.modeId,
       // [local-patch 2026-10-22] 超限模式：客户端据此知道回合数没有上限（HUD 的「隐藏核心 ?? 」判定不能拿 lastRound 卡它）
       isInfinite: !!this.isInfinite,
-      // 战斗推进倍速（超限 R16+ 是 2）；倒计时与它无关，仍是 1 倍
-      gameSpeed: this.gameSpeed,
-      // 超限倍速开关的位置：1 = 基准速（GAME_SPEED），2 = 双倍
-      speedPref: this.isInfinite ? (this.infiniteSpeedPref || 1) : 1,
       // 超限：已选词条（HUD 上要能看到本局拿了什么）
       ...(this.isInfinite && Array.isArray(this.traitMods) && this.traitMods.length
         ? {

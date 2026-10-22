@@ -39,10 +39,9 @@ export class MatchIntents {
       // 「意图不存在」**行为等价**。
       case 'g.unequip': return ps.unequip(msg.itemUid);
       case 'g.reward': return ps.pickReward(msg.idx);
-      // [local-patch 2026-10-22] 超限的词条抉择 / 战术撤退 / 战斗内倍速开关（traitDraft.js / phases.js）
+      // [local-patch 2026-10-22] 超限的词条抉择 / 战术撤退（traitDraft.js）；加速走统一的房主倍速 g.matchSpeed
       case 'g.traitChoice': return this.pickTrait(ps, msg.idx);
       case 'g.traitRetreat': return this.retreatNow(ps);
-      case 'g.combatSpeed': return this.setCombatSpeed(ps, msg.speed);
       case 'g.choice': return msg.choiceId !== undefined
         ? this.pickPersonalChoice(ps, msg.idx, msg.choiceId)
         : this.pickCard(ps, msg.idx);
@@ -162,9 +161,6 @@ export class MatchIntents {
    */
   setMatchSpeed(ps, rate) {
     if (this.ended || this.disposed) return fail(ERR.WRONG_PHASE);
-    // [local-patch 2026-10-22] 超限局不走房主倍速：它有自己的战斗内 1×/2× 开关（phases.js setCombatSpeed），
-    // 两条速度链会互相覆盖 —— 超限房里房主倍速按钮保持无效。
-    if (this.isInfinite) return fail(ERR.WRONG_PHASE, 'the overlimit match uses its own combat speed switch');
     if (!this.hostId || ps.playerId !== this.hostId) return fail(ERR.NOT_HOST);
     if (!Number.isInteger(rate) || rate < 1 || rate > 4) return fail(ERR.BAD_MSG);
     if (rate === this.matchRate) return OK;

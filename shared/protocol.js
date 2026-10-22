@@ -889,10 +889,9 @@ export const C2S = {
   // unequip (DESIGN §36.15): one equipped item back to the hand, else the visible temp window. Official rooms refuse it.
   'g.reward': { idx: (v) => isInt(v, 0, 5) },
   'g.choice': { idx: (v) => isInt(v, 0, 5), choiceId: isId, $optional: ['choiceId'] },
-  // [local-patch 2026-10-22] 超限的词条抉择（0..2 三选一）与右下角的【战术撤退】、战斗内倍速开关（1 = 常速，2 = 双倍）
+  // [local-patch 2026-10-22] 超限的词条抉择（0..2 三选一）与右下角的【战术撤退】（加速走统一的 g.matchSpeed）
   'g.traitChoice': { idx: (v) => isInt(v, 0, 2) },
   'g.traitRetreat': {},
-  'g.combatSpeed': { speed: (v) => v === 1 || v === 2 },
   // a plugin interaction window (PLUGIN API v2, docs/PLUGINS.md §10b): offerId is the window's declared id, idx the
   // slot picked; g.offerRefresh redraws one slot (the window's own `refresh.perSlot` bounds how often). The host
   // applies the window's declared effect primitive — a plugin never receives these messages itself.

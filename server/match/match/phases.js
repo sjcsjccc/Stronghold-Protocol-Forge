@@ -6,8 +6,6 @@
 
 import { PHASE, ERR, GEO } from '../../../shared/constants.js';
 import { msg } from '../../../shared/i18n.js';
-import { GAME_SPEED } from '../fields.js';
-const BASE = GAME_SPEED; // [local-patch 2026-10-22] 超限的 1×/2× 是相对基准的说法（1× = 全模式的 GAME_SPEED）
 import { buildNormalWave, buildBossWave } from '../waves.js';
 // [local-patch 2026-10-22] 超限模拟：R16+ 无限波次与双 Boss 生成器、词条抉择的开闸判断（上游 0.3.1.1）
 import { isInfiniteBossRound, buildInfiniteNormalWave, buildInfiniteBossWave, capWaveKinds } from '../infiniteWaves.js';
@@ -319,9 +317,6 @@ export class MatchPhases {
   _startRoundAfterOffers(r) {
     this.phase = PHASE.ROUND_START;
     this.round = r;
-    // [local-patch 2026-10-22] 超限：R16 前固定 1×；R16 起按战斗内开关（setCombatSpeed，默认 1×）。
-    // 业主 2026-10-20：「一倍速和之前的很快的速度一样，二倍速是一倍速两倍」——基准（1×）就是全模式的 GAME_SPEED=2。
-    if (this.isInfinite) this.gameSpeed = r < 16 ? GAME_SPEED : (BASE * (this.infiniteSpeedPref || 1));
     this.fields = [];
     this.watchers.clear();
     this.unitePlan = null;
@@ -461,24 +456,6 @@ export class MatchPhases {
     return out;
   }
 
-  /**
-   * [local-patch 2026-10-22] 超限的战斗内速度开关（上游 0.3.1.1）：开关上的 1× / 2× 是**相对基准**的说法
-   * （1× = 全模式的 GAME_SPEED，原来就这么快；2× = 它的两倍）。经什么 intent 走由 protocol 侧声明。
-   */
-  setCombatSpeed(ps, speed) {
-    if (!this.isInfinite) return fail(ERR.WRONG_PHASE);
-    // 开关上的 1× / 2× 是**相对基准**的说法：1× = 全模式的 GAME_SPEED（原来就这么快），2× = 它的两倍。
-    // 内部 gameSpeed 仍是绝对倍率。倒计时不跟着倍速换算（业主 2026-10-20）：切 1×/2× 时时钟照常走。
-    const pref = speed === 2 ? 2 : 1;
-    const v = BASE * pref;
-    const prev = Number(this.gameSpeed) > 0 ? this.gameSpeed : BASE;
-    this.infiniteSpeedPref = pref;
-    if (v === prev) { this.markPublic(); return OK; }
-    this.gameSpeed = v;
-    void ps;
-    this.markPublic();
-    return OK;
-  }
 
   afterRoundStart() {
     // [local-patch 2026-10-22] 超限：通过 Boss 的下一回合先开词条抉择（业主 2026-10-18）；普通模式完全不走这里。

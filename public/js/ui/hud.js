@@ -576,8 +576,6 @@ export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, pri
         ${onSpeed || speedDisabled ? html`<${SpeedButton} speed=${speed} onSpeed=${onSpeed} disabled=${speedDisabled} hint=${speedHint} />` : null}
       </div>
       <${OvertimeWarning} ot=${ot} />
-      ${/* [local-patch 2026-10-22] 超限：战斗内 1×/2× 出怪速度开关（pub.speedPref）；已有词条的面板入口 */
-      pub?.isInfinite ? html`<${SpeedToggle} speed=${pub?.speedPref ?? 1} onSpeed=${onSpeed} />` : null}
       ${pub?.isInfinite && Array.isArray(pub?.traitMods) && pub.traitMods.length ? html`<${TraitChips} mods=${pub.traitMods} />` : null}
       ${showReady ? html`<${ReadyToggle} priv=${priv} onToggle=${onReady} busy=${readyBusy} readyCount=${readyCount} total=${playerCount} />` : null}
     </div>
@@ -625,25 +623,6 @@ function TraitChips({ mods }) {
   </div>`;
 }
 
-/** [local-patch 2026-10-22] 超限倍速开关（业主 2026-10-20）：玩家自己点，1× ↔ 2×。 */
-function SpeedToggle({ speed, onSpeed }) {
-  // speed 是开关位置（1 / 2），不是绝对倍率；基准倍率见服务端 GAME_SPEED
-  const fast = Number(speed) >= 2;
-  const label = t('出怪速度');
-  return html`<button type="button" class=${'gspeed' + (fast ? ' is-fast' : '')}
-    onClick=${() => onSpeed?.(fast ? 1 : 2)} role="switch" aria-checked=${fast ? 'true' : 'false'}
-    aria-label=${label}
-    title=${fast ? t('出怪与战斗推进 2 倍速 · 倒计时仍是 1 倍速（点一下切回常速）')
-                : t('出怪与战斗推进 1 倍速（点一下切到 2 倍速，倒计时不受影响）')}
-    data-testid="combat-speed">
-    <span class="gspeed__cap">${t('SPEED')}</span>
-    <span class="gspeed__rail" aria-hidden="true">
-      <span class="gspeed__opt${fast ? '' : ' is-on'}">1×</span>
-      <span class="gspeed__opt${fast ? ' is-on' : ''}">2×</span>
-      <span class="gspeed__thumb"></span>
-    </span>
-  </button>`;
-}
 
 /** DP counter shown at the right edge during combat. */
 export function DpCounter({ dp }) {
