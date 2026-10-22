@@ -165,23 +165,25 @@ test('ps100 §3: GameData carries the seat cap, defaulting to MAX_SEATS', () => 
 // ---------------------------------------------------------------------------------------------------------------
 // §5 the lone human in a co-op room can no longer stall the prep forever
 
-test('ps100 §5: a lone human + AI teammates arms the prep deadline (the stall that had none)', () => {
+test('ps100 §5 [local-patch 2026-10-19④]: a lone human + AI teammates leaves the prep UNTIMED (整备期没有倒计时 — the owner took the guard back out)', () => {
   const h = makeMatch({ mode: 'coop', difficulty: 'NORMAL', humans: 1, bots: 3, seed: 5, fake: true, timerScale: 1 }).start();
   const m = h.m;
   assert.equal(m.loneHuman, true, 'exactly one human seat');
-  assert.equal(m.soloUntimed, true, 'the playtest #4 item 3 rule still holds for every other phase');
+  assert.equal(m.soloUntimed, true, 'the playtest #4 item 3 rule holds for every other phase too');
   assert.equal(m.hasReadyableHuman, true, 'that human is the seat the prep waits for');
   assert.ok(h.drive(() => m.phase === PHASE.PREP && m.round === 1, { ready: false }), 'reached PREP with the human unready');
-  assert.ok(m.deadline > 0, 'PREP publishes a deadline');
-  assert.ok(m._phaseTimer, 'and arms a real timer');
-  // THE positive assertion for this fix: the lone-human co-op room IS timed. Without it a revert of the guard would
-  // silently restore the deadlock (the test below would still pass, since a stalled prep trivially "does not advance").
-  assert.equal(m.prepFallbackGuard, true, 'this is the lone-human co-op room the guard exists for');
-  assert.equal(m.prepDeadlineSeconds(), m.gd.prepTime(m.round), 'it gets the timer the DATA already declares for the round');
-  assert.equal(m.prepUntimed, false, 'so its prep is not untimed');
-  // the human never presses Ready: the deadline must carry the match on instead of stalling it
+  // [local-patch 2026-10-19④] the anti-stall deadline the PS100 migration armed here is deliberately GONE: the owner
+  // took lone-human prep untimed (the human ends the prep with their own Ready press and can always leave, so their
+  // silence stalls only their own run). The `prepFallbackGuard` flag still marks the shape for a one-token revert.
+  assert.equal(m.prepFallbackGuard, true, 'this is still the lone-human co-op room the old guard existed for');
+  assert.equal(m.prepDeadlineSeconds(), null, 'but its prep publishes no deadline');
+  assert.equal(m.deadline, 0, 'PREP is untimed');
+  assert.ok(m._phaseTimer == null, 'and no phase timer is armed');
+  assert.equal(m.prepUntimed, false, 'prepUntimed is the legacy "no seat able to press Ready" notion — the human CAN ready');
+  assert.equal(m.soloUntimed && m.prepDeadlineSeconds() == null, true, 'the prep is untimed through soloUntimed + patch 4, which is the dial that matters');
+  // the human never presses Ready: nothing carries the match on — their own untimed prep waits for them
   h.sched.advance(10 * 60_000);
-  assert.notEqual(m.phase, PHASE.PREP, 'the prep cannot wait forever on a silent human');
+  assert.equal(m.phase, PHASE.PREP, 'the prep waits (no deadline to move it on)');
   m.dispose();
 });
 

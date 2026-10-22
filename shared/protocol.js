@@ -1,7 +1,7 @@
 // Normative message catalogue (DESIGN §8). Used by server (validation) and client (building requests).
 // Every client→server message is `{ t, rid?, ...fields }`. Unknown `t` or invalid fields ⇒ ERR.BAD_MSG.
 
-import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_ROOM_MODS, EMOTES, GEO, maxSeatsFrom, MIN_SEATS } from './constants.js';
+import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_ROOM_MODS, EMOTES, GEO, maxSeatsFrom, MIN_SEATS, MAX_SPECTATORS } from './constants.js';
 import { isDroppableChess } from './standIn.js';
 import { diySlotIds, validateDiyPicks } from './diy.js';
 import { isSupportEntries } from './support.js';
@@ -724,6 +724,15 @@ export const C2S = {
   // the co-op room option 「AI 队友最后选择」 (GitHub #338; host, before the match): the strategy and 机变 drafts order every
   // human seat before every AI seat (server/match/match/phases.js humansFirst); room.state.aiPicksLast
   'room.setAiPicksLast': { on: isBool },
+  // 观战席数量 ([local-patch 2026-10-21] room.setSpectatorCap): the HOST resizes the room's spectator seats at any time —
+  // lobby or MID-MATCH (a spectator may join during the game, so the spectate gate reads the cap live; spectators
+  // already seated stay when the cap drops below their count). Default SPECTATORS_DEFAULT, hard ceiling MAX_SPECTATORS.
+  // `code` names the room, same reasoning as room.setSeatCap: a stale frame is NOT_IN_ROOM, never a silent resize of
+  // whatever room the sender happens to be in now.
+  'room.setSpectatorCap': {
+    code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v),
+    cap: (v) => isInt(v, 0, MAX_SPECTATORS),
+  },
   // 房间内改本房间的**模组集合**（G1；docs/WORKSHOP.md §1.9.3）：房主、开局前、且**没有任何真人已就绪**时，
   // 把这一房声明的集合换成另一个（`[]` = 改回「不声明」，即跑服务器加载的全部）。形状与 `room.create.modIds`
   // **逐字同形**（同一格的判据、同一个 `MAX_ROOM_MODS` 上限）—— 一条声明两处写法就是两个会漂的真相。

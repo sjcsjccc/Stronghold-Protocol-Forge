@@ -214,7 +214,11 @@ export function clampSeats(want, max = MAX_SEATS) {
  * A spectator never counts as a player, may not act, and watches like an eliminated player (server/lobby.js spectate,
  * server/match/match/watch.js addSpectator).
  */
-export const MAX_SPECTATORS = 2;
+// [local-patch 2026-10-21] the cap is the HOST's dial (room.setSpectatorCap): SPECTATORS_DEFAULT on a fresh room,
+// MAX_SPECTATORS the hard ceiling (the room settings' slider max). Was the flat `MAX_SPECTATORS = 2` (owner's decision
+// 2026-10-04); the seats still never count as players and a spectator still never acts.
+export const SPECTATORS_DEFAULT = 5;
+export const MAX_SPECTATORS = 20;
 export const ROOM_CODE_LEN = 4;
 export const NAME_MAX_LEN = 12;
 /**

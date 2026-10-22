@@ -31,7 +31,8 @@ import { enabled as federationEnabled, currentNode } from '../federation.js';
 // Texts go through t() (docs/I18N.md).
 
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
-import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MIN_SEATS, MAX_SPECTATORS, ERR_TEXT } from '../../../shared/constants.js';
+import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, MIN_SEATS, MAX_SPECTATORS, SPECTATORS_DEFAULT, ERR_TEXT } from '../../../shared/constants.js';
+// [local-patch 2026-10-21] +SPECTATORS_DEFAULT: the spectator cap is the HOST's dial (room.setSpectatorCap), default 5
 // seat counts through the namespace: the live constants (before the 10-seat package) have MAX_SEATS 4 and no DEFAULT_SEATS
 import * as SEAT_CONST from '../../../shared/constants.js';
 import { RANDOM_MODE, RANDOM_MODE_NAME } from '../../../shared/randomMode.js';
@@ -133,6 +134,8 @@ export function roomFacts(room, myId) {
     // spectator seats (never players: not in `humans`, never counted for ready / start)
     spectators: Array.isArray(room?.spectators) ? room.spectators.filter((s) => s && typeof s === 'object') : [],
     spectating: isSpectating(room, myId),
+    // [local-patch 2026-10-21] the room's spectator-seat cap (the host's dial); the frame omits it while it is the default
+    spectatorCap: typeof room?.spectatorCap === 'number' ? room.spectatorCap : SPECTATORS_DEFAULT,
   };
 }
 
@@ -270,6 +273,37 @@ function SeatCapSetter({ room, isHost, onPick }) {
   </div>`;
 }
 
+/** [local-patch 2026-10-21] the host's spectator-seat dial (`room.setSpectatorCap`, default SPECTATORS_DEFAULT, max
+ * MAX_SPECTATORS): same contract as SeatCapSetter — host only, `asked` keeps the request on screen until the room's
+ * own frame agrees (or the refusal snaps it back). */
+function SpectatorCapSetter({ room, isHost, onPick }) {
+  const [asked, setAsked] = useState(null);
+  const value = typeof room?.spectatorCap === 'number' ? room.spectatorCap : SPECTATORS_DEFAULT;
+  useEffect(() => {
+    if (asked != null && room && room.spectatorCap === asked) setAsked(null);
+  }, [asked, room]);
+  if (!isHost) return null;
+  const shown = asked != null && asked >= 0 && asked <= MAX_SPECTATORS ? asked : value;
+  const pct = Math.round((shown / MAX_SPECTATORS) * 100);
+  const commit = async (v) => {
+    const want = Math.min(Math.max(v, 0), MAX_SPECTATORS);
+    if (want === value) { setAsked(null); return; }
+    setAsked(want);
+    if (!(await onPick(want))) setAsked(null);
+  };
+  return html`<div class="seat-cap seat-cap--room">
+    <${MicroLabel} tone="mint">SPECTATORS<//>
+    <span class="seat-cap__name">${t('观战席数量')}</span>
+    <input class="seat-cap__slider" type="range" min="0" max=${MAX_SPECTATORS} step="1" value=${shown}
+      style=${`--pct:${pct}%`} aria-label=${t('观战席数量')}
+      aria-valuemin="0" aria-valuemax=${MAX_SPECTATORS} aria-valuenow=${shown}
+      title=${t('观战者不占博士席位，随时可进；对局中同样生效')}
+      onInput=${(e) => setAsked(Number(e.currentTarget.value))}
+      onChange=${(e) => commit(Number(e.currentTarget.value))} />
+    <span class="seat-cap__value num">${shown}<span class="t-dim"> / ${MAX_SPECTATORS}</span></span>
+  </div>`;
+}
+
 function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, searching, portraits, onPickCard = null, onAddBot = null, onRemoveBot = null }) {
   const seatAccount = useAccount(seat && !seat.isBot ? seat.playerId : null);
   const [bad, setBad] = useState(null);
@@ -340,7 +374,7 @@ function SeatCard({ seat, index, room, facts, myId, busy, onKick, onInvite, sear
 function SpectatorBar({ facts, myId, busy, onRemove, onSit }) {
   if (!facts.spectators.length) return null;
   return html`<section class="specbar" aria-label=${t('观战席')}>
-    <span class="specbar__label"><${Icon} name="eye" />${t('观战席')}<b class="num">${facts.spectators.length}</b><span class="num t-dim">/${MAX_SPECTATORS}</span></span>
+    <span class="specbar__label"><${Icon} name="eye" />${t('观战席')}<b class="num">${facts.spectators.length}</b><span class="num t-dim">/${facts.spectatorCap}</span></span>
     ${facts.spectators.map((s) => html`<span key=${s.playerId} class=${`specbar__who${s.playerId === myId ? ' is-me' : ''}${s.connected === false ? ' is-offline' : ''}`}>
       ${s.connected === false ? html`<${Icon} name="wifiOff" />` : null}${s.name || t('博士')}${s.playerId === myId ? html`<span class="seat__you">${t('你')}</span>` : null}
       ${facts.isHost ? html`<${Button} variant="ghost" size="sm" square=${true} icon="close" loading=${busy === `rs${s.playerId}`}
@@ -395,7 +429,7 @@ function RoomProtocol({ room, variant, onClose, onPick, busy, leaving = false })
 }
 
 /** ⚙ of the bottom pill: 私密房间, 人数上限 (with the 10-seat constants), AI 队友最后选择, 无限火力 branch. */
-function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSeatCap, onAiLast, onVariant, onClose, leaving = false }) {
+function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSeatCap, onSpecCap, onAiLast, onVariant, onClose, leaving = false }) {
   const coop = room.mode !== 'solo';
   const host = facts.isHost;
   useEffect(() => {
@@ -409,6 +443,7 @@ function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSe
     ${coop && CAN_PRIVATE ? html`<label class="rs-opt"><input type="checkbox" checked=${room.private === true} disabled=${!host || !!busy || !online} onChange=${(e) => onPrivate(e.currentTarget.checked)} />
       <span>${t('私密房间')}<small>${room.private ? t('仅凭同盟密钥或邀请加入，不能搜寻队友') : t('公开大厅可见，可以搜寻队友')}</small></span></label>` : null}
     <${SeatCapSetter} room=${room} isHost=${host} onPick=${onSeatCap} />
+    ${coop ? html`<${SpectatorCapSetter} room=${room} isHost=${host} onPick=${onSpecCap} />` : null}
     <${AiLastToggle} option=${aiLastOption(room, myId)} busy=${busy} onToggle=${onAiLast} />
     ${room.random === true ? html`<div class="rs-opt rs-opt--variant"><span>${t('模式分支')}</span>
       <div class="dpick" role="radiogroup" aria-label=${t('模式分支')}>
@@ -772,6 +807,8 @@ export function RoomScreen() {
   // 本房座位上限 (业主裁决 B5): the `code` goes along so the request can only ever address THIS room — a tab acting on a
   // stale frame gets NOT_IN_ROOM instead of resizing whatever room it happens to be in now.
   const setSeatCap = (seatCap) => run('seatcap', () => net.request('room.setSeatCap', { code: room.code, seatCap }));
+  // [local-patch 2026-10-21] 观战席数量：the host's dial, live in the lobby and mid-match (the spectate gate reads it)
+  const setSpecCap = (cap) => run('speccap', () => net.request('room.setSpectatorCap', { code: room.code, cap }));
   // 「添加 AI 队友」：包版房间把空席位的入口只留了「邀请」，而服务端 `room.addBot` / `room.removeBot` 一直都在
   // （HEAD 的引擎房间有这两个按钮，见本次 CHANGELOG 0.18.4）。按业主裁定补回**入口**，协议与服务端一字未动。
   const addBot = () => run('add', () => net.request('room.addBot', {}));
@@ -914,7 +951,7 @@ export function RoomScreen() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" fill-rule="evenodd" /></svg>
           </button>
           ${optsShown ? html`<${RoomOptions} room=${room} facts=${facts} myId=${me.playerId} busy=${busy} online=${online} variant=${variant}
-            onPrivate=${setPrivate} onSeatCap=${setSeatCap} onAiLast=${setAiLast} onVariant=${setVariant} onClose=${() => setOpts(false)} leaving=${optsLeaving} />` : null}
+            onPrivate=${setPrivate} onSeatCap=${setSeatCap} onSpecCap=${setSpecCap} onAiLast=${setAiLast} onVariant=${setVariant} onClose=${() => setOpts(false)} leaving=${optsLeaving} />` : null}
         </div>
       </div>
       <div class="rs-foot__right">

@@ -181,7 +181,7 @@
 //     the match are the grace timers already running for its disconnected seats.
 
 import { randomBytes, randomInt } from 'node:crypto';
-import { DIFFICULTIES, ERR, MAX_SEATS, MIN_SEATS, MAX_SPECTATORS, ROOM_CODE_LEN, modeIdFor, maxSeatsFrom, clampSeats } from '../shared/constants.js';
+import { DIFFICULTIES, ERR, MAX_SEATS, MIN_SEATS, MAX_SPECTATORS, SPECTATORS_DEFAULT, ROOM_CODE_LEN, modeIdFor, maxSeatsFrom, clampSeats } from '../shared/constants.js'; // [local-patch 2026-10-21] +SPECTATORS_DEFAULT
 import { checkLoadout, checkLoadoutOps, cultivationCharIds, checkNotOwned, checkDiyPicks, charPotentialChanges, PACK_MSG_LIMITS, CHAT_LIMITS } from '../shared/protocol.js';
 import { modSetOf, isModId, modSetDrift } from '../shared/modIdentity.js';
 import { normalizeSupportConfig, checkSupport, supportPicker, supportCapacity, supportTiers } from '../shared/support.js';
@@ -421,6 +421,8 @@ export class Room {
     this.seats = new Array(seatCap).fill(null);
     /** @type {{ playerId: string, name: string, connected: boolean }[]} spectator seats, ≤ MAX_SPECTATORS (header) */
     this.spectators = [];
+    /** [local-patch 2026-10-21] the room's spectator-seat count — the HOST's dial (room.setSpectatorCap), default 5 */
+    this.spectatorCap = SPECTATORS_DEFAULT;
     /** @type {any} running Match instance */
     this.match = null;
     /** @type {{ live: boolean, ended: boolean, disposed: boolean, match: any } | null} */
@@ -550,6 +552,9 @@ export class Room {
       mode: this.mode,
       difficulty: this.difficulty,
       aiPicksLast: this.aiPicksLast,
+      // [local-patch 2026-10-21] 观战席数量：present ONLY when the host moved it off the default, so a room that never
+      // touched the dial keeps its frame byte-for-byte what it was (the same convention as `seatCap` below)
+      ...(this.spectatorCap !== SPECTATORS_DEFAULT ? { spectatorCap: this.spectatorCap } : {}),
       // 房内聊天模式：客户端据此决定要不要显示输入框。**服务端强制**（`chat` / `quickMsg` 各自再判一次），
       // 这个字段只是让界面说实话。
       chatMode: this.chatMode,
@@ -1068,6 +1073,7 @@ export class Lobby {  /**
       case 'room.setDifficulty': return this.setDifficulty(session, msg);
       case 'room.setSeatCap': return this.setSeatCap(session, msg);
       case 'room.setAiPicksLast': return this.setAiPicksLast(session, msg);
+      case 'room.setSpectatorCap': return this.setSpectatorCap(session, msg); // [local-patch 2026-10-21]
       // 房间内改本房间的模组集合（G1/G2，docs/WORKSHOP.md §1.9.3）：房主、开局前、且没有真人已就绪
       case 'room.mods': return this.setRoomMods(session, msg);
       case 'room.addBot': return this.addBot(session);
@@ -1479,6 +1485,7 @@ export class Lobby {  /**
     if (cur && cur.match) return fail(ERR.ROOM_STARTED, 'leave your running match first');
     if (room.mode === 'solo') return fail(ERR.ROOM_FULL, 'solo room');
     if (room.spectators.length >= MAX_SPECTATORS) return fail(ERR.ROOM_FULL, 'no free spectator seat');
+    if (room.spectators.length >= (room.spectatorCap ?? SPECTATORS_DEFAULT)) return fail(ERR.ROOM_FULL, 'no free spectator seat'); // [local-patch 2026-10-21] the host's dial
     if (cur) this.removeMember(cur, session.playerId);
     room.spectators.push({ playerId: session.playerId, name: session.name, connected: session.connected });
     session.roomCode = room.code;
@@ -1536,6 +1543,25 @@ export class Lobby {  /**
       room.difficulty = difficulty;
       if (room.content?.modeId) { const rest = { ...room.content }; delete rest.modeId; room.content = Object.freeze(rest); }
       for (const s of room.seats) if (s && !s.isBot && s.playerId !== room.hostId) s.ready = false;
+      this.broadcastState(room);
+    }
+    return OK;
+  }
+  /**
+   * [local-patch 2026-10-21] room.setSpectatorCap { code, cap }: the HOST resizes the room's spectator seats, in the
+   * lobby or MID-MATCH — a spectator may join during the game, so the spectate gate reads the cap live; spectators
+   * already seated stay even when the cap drops below their count (the gate is on new joins only). Solo rooms have
+   * no spectator seats at all, so there is nothing to resize.
+   */
+  setSpectatorCap(session, { code, cap }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.code !== code) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    if (room.mode === 'solo') return fail(ERR.BAD_TARGET, 'solo rooms have no spectator seats');
+    if (room.spectatorCap !== cap) {
+      this.dropReplay(room, session.playerId);
+      room.spectatorCap = cap;
       this.broadcastState(room);
     }
     return OK;

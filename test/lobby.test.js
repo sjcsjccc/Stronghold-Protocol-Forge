@@ -19,7 +19,7 @@ import { sanitizeName, TokenBucket, SessionRegistry, clientAddress, normalizeIp,
 import { StubMatch as Match } from '../server/match/StubMatch.js';
 import { Match as RealMatch } from '../server/match/Match.js';
 import { TestClient } from './helpers/wsClient.js';
-import { ERR, MAX_SEATS, MAX_SPECTATORS, PHASE, EMOTES, PROTOCOL_VERSION } from '../shared/constants.js';
+import { ERR, MAX_SEATS, MAX_SPECTATORS, SPECTATORS_DEFAULT, PHASE, EMOTES, PROTOCOL_VERSION } from '../shared/constants.js';
 import { LOBBY_DEFAULTS } from '../server/lobby.js';
 
 const CODE_RE = new RegExp(`^[${CODE_ALPHABET}]{4}$`);
@@ -788,6 +788,13 @@ describe('websocket lobby', () => {
     const guest = await pool.player('Guest');
     await joinRoom(guest, st.code);
     const s1 = await pool.player('Watcher1');
+    // [local-patch 2026-10-21] the cap is the host's dial (room.setSpectatorCap, default SPECTATORS_DEFAULT = 5): pin
+    // this room to the two-seat flow the rest of the test reads. A non-host is refused; out-of-range is malformed.
+    await expectError(guest, { t: 'room.setSpectatorCap', code: st.code, cap: 2 }, ERR.NOT_HOST);
+    await expectError(host, { t: 'room.setSpectatorCap', code: st.code, cap: 25 }, ERR.BAD_MSG);
+    await expectError(host, { t: 'room.setSpectatorCap', code: st.code, cap: -1 }, ERR.BAD_MSG);
+    await expectOk(host, { t: 'room.setSpectatorCap', code: st.code, cap: 2 });
+    await host.waitFor('room.state', (s) => s.spectatorCap === 2);
     await expectOk(s1, { t: 'room.spectate', code: st.code.toLowerCase() });
     const v1 = await s1.waitFor('room.state', (s) => s.spectators.some((x) => x.playerId === s1.id));
     assert.deepEqual(v1.spectators, [{ playerId: s1.id, name: 'Watcher1', connected: true }]);
@@ -804,7 +811,8 @@ describe('websocket lobby', () => {
     // the cap; spectators never count toward the players: two player seats still free
     const s2 = await pool.player('Watcher2');
     await expectOk(s2, { t: 'room.spectate', code: st.code });
-    assert.equal(MAX_SPECTATORS, 2);
+    assert.equal(SPECTATORS_DEFAULT, 5); // [local-patch 2026-10-21] the default the host's dial starts at
+    assert.equal(MAX_SPECTATORS, 20); // the dial's hard ceiling
     const s3 = await pool.player('Watcher3');
     await expectError(s3, { t: 'room.spectate', code: st.code }, ERR.ROOM_FULL);
     await joinRoom(s3, st.code);

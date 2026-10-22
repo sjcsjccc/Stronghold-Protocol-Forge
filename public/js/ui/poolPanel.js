@@ -45,7 +45,7 @@ export function PoolPanel({ onClose }) {
           <button type="button" class="toolbtn" disabled=${busy} onClick=${ask} title=${t('向服务器询问最新余量')}>
             <${Icon} name="refresh" /><span>${t('刷新')}</span>
           </button>
-          {/* 游戏内 Modal 的遮罩是 pointer-events:none，点空白关闭与 Esc 在触屏上都不可用——必须自带关闭按钮 */}
+          {/* the game's Modal mask is pointer-events:none — blank-click close and Esc are dead on touch, so the panel must carry its own close button */}
           <button type="button" class="toolbtn" onClick=${onClose} title=${t('关闭卡池面板')}>
             <${Icon} name="close" /><span>${t('关闭')}</span>
           </button>
