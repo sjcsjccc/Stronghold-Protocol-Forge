@@ -29,6 +29,7 @@ export class MatchWatch {
 
   /** The spectator left (room.leave / g.leave, removed by the host, reconnect window expired). */
   removeSpectator(playerId) {
+    this.spectatorEmoteAt?.delete(playerId);
     if (this.spectators.delete(playerId)) this.watchers.delete(playerId);
   }
 

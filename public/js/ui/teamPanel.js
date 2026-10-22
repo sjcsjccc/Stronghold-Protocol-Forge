@@ -113,10 +113,13 @@ export function rowLpTip(lp, cap = 10) {
  * @param {{ pub:any, myId:string, watching:string|null, bubbles: Map<string,{id:string,seq:number}>, onWatch:(p:any)=>void,
  *   compact?: boolean, teamLp?: number|null, self?: { lp?: number|null, pending: number, unite: boolean, left?: number|null } | null,
  *   cap?: number, uniteLocal?: Record<string, number> | null,
- *   observe?: null | { canObserve: (p:any) => { fieldId?: string, reason?: string|null, back?: boolean }, observing: boolean, onBack: () => void } }} props
+ *   observe?: null | { canObserve: (p:any) => { fieldId?: string, reason?: string|null, back?: boolean }, observing: boolean, onBack: () => void },
+ *   kick?: null | { onKick: (p:any) => void } }} props
  *   uniteLocal: the local 联防 replica's per-leaker counts while it is on screen (battle runner state().uniteLeft), else null
+ *   kick: [local-patch 2026-10-22] the host's mid-match kick (room.kick) — a ✕ on every seated human's row but its own;
+ *   the game screen asks before sending.
  */
-export function TeamPanel({ pub, myId, watching, bubbles, onWatch, compact = false, observe = null, self: selfLive = null, cap = 10, uniteLocal = null, spMarks = null }) {
+export function TeamPanel({ pub, myId, watching, bubbles, onWatch, compact = false, observe = null, self: selfLive = null, cap = 10, uniteLocal = null, spMarks = null, kick = null }) {
   const [openPid, setOpenPid] = useState(null);
   // the playerId whose avatar just called onWatch, so the other click of a double-click does not open the view again
   const askedAt = useRef(/** @type {{ id: string|null, at: number }} */ ({ id: null, at: 0 }));
@@ -192,6 +195,12 @@ export function TeamPanel({ pub, myId, watching, bubbles, onWatch, compact = fal
               </span>
             <//>
             ${watched && !self ? html`<span class="team__eye" title=${t('正在查看')}><${GIcon} name="eye" /></span>` : null}
+            ${/* [local-patch 2026-10-22] the host's mid-match kick: seated humans only (bots stay room.removeBot's,
+              a fully departed row — alive AND disconnected — is already out of the room) */
+            kick && !self && !p.isBot && (p.alive !== false || p.connected !== false) ? html`<${Tooltip} text=${t('移出对局')} placement="right">
+              <button type="button" class="team__kick" data-testid="team-kick" title=${t('移出对局')}
+                aria-label=${t('将 {name} 移出对局', { name: p.name || '' })} onClick=${() => kick.onKick(p)}><${Icon} name="close" /></button>
+            <//>` : null}
           </div>
           ${open ? html`<button type="button" class="btn btn--primary btn--sm team__ob"
             onClick=${() => { setOpenPid(null); onWatch(p); }}><span class="btn__label">${t('前往查看')}</span></button>` : null}

@@ -548,6 +548,9 @@ export class Match {
      */
     this.spectators = new Map();
     for (const id of Array.isArray(opts.spectators) ? opts.spectators : []) this._spectator(id);
+    // [local-patch 2026-10-22] the spectator seats' emote cooldown (the stand-ins are frozen: intents.js emote) —
+    // playerId → the seat's last emote on the match clock
+    this.spectatorEmoteAt = new Map();
     /**
      * Exactly one human seat at the start (独立模拟, or a 同盟 room started alone / with AI teammates only): nobody waits
      * on anybody, so no phase outside a battle is timed — soloUntimed (user playtest #4 item 3). The mode's own rules

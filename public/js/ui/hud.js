@@ -43,6 +43,7 @@ import { hotkeyLabelOf } from './settings.js';
 import { UnofficialMark, ruleLine } from './pluginTag.js';
 // 倍速的档位表来自 runner（一份真相）：按钮只显示与循环它，实际生效由 `runner.setRate` 负责。
 import { RATE_STEPS } from '../battle/runner.js';
+import { EmoteBubble } from './emotes.js';
 import { t, tParts, N_ } from '../../../shared/i18n.js';
 import { TestMark } from './testConsole.js';
 
@@ -54,14 +55,19 @@ const cx = (...p) => p.flat().filter(Boolean).join(' ');
  * completely, so a spectator could only be removed before the match or after it. A small eye + the count beside the latency;
  * a tap opens the roster, with the host's ✕ on every row (room.removeSpectator: the server takes it at any time; the removed
  * seat gets room.closed {kicked} and no more frames). Renders nothing while no spectator seat is taken.
- * @param {{ spectators: any[]|null, myId: any, isHost: boolean, onRemove: ((playerId: any) => any)|null }} props
+ * [local-patch 2026-10-22] `bubbles`: a spectator seat's live emote bubbles (the team panel only hangs bubbles on match
+ * players) — they float under the capsule with the sender's name.
+ * @param {{ spectators: any[]|null, myId: any, isHost: boolean, onRemove: ((playerId: any) => any)|null,
+ *   bubbles?: Array<{ id: string, seq: number, at: number, name?: string }>|null, ttl?: number }} props
  */
-export function SpectatorPill({ spectators, myId, isHost, onRemove }) {
+export function SpectatorPill({ spectators, myId, isHost, onRemove, bubbles = null, ttl }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(null);
   const list = Array.isArray(spectators) ? spectators.filter((s) => s && typeof s === 'object') : [];
   // the roster closes with its last seat (the pill is gone: it must not pop up again for the next spectator)
   useEffect(() => { if (!list.length) setOpen(false); }, [list.length]);
+  const live = Array.isArray(bubbles) ? bubbles.filter((b) => b && typeof b.id === 'string') : [];
+  // a bubble implies a listed spectator seat (game.js filters bubbles by the room's spectator ids)
   if (!list.length) return null;
   const remove = async (playerId) => {
     if (!onRemove) return;
@@ -72,6 +78,12 @@ export function SpectatorPill({ spectators, myId, isHost, onRemove }) {
       onClick=${() => setOpen(true)} data-testid="spectators" title=${t('观战席')} aria-label=${t('观战席')}>
       <span class="specpill__num num">${list.length}</span>
     <//>
+    ${live.length ? html`<span class="specpill__bubbles" aria-live="polite">
+      ${live.map((b) => html`<span key=${b.seq} class="specpill__bubble">
+        <${EmoteBubble} id=${b.id} at=${b.at} ttl=${ttl} />
+        <span class="specpill__who">${b.name || t('博士')}</span>
+      </span>`)}
+    </span>` : null}
     ${open ? html`<${Modal} open=${true} title=${t('观战席')} micro="SPECTATORS" width="6.4rem" onClose=${() => setOpen(false)}
         actions=${html`<${Button} variant="secondary" onClick=${() => setOpen(false)}>${t('关闭')}<//>`}>
       <ul class="spec__roster" data-testid="spectator-roster">
@@ -491,7 +503,7 @@ export function SpeedButton({ speed, onSpeed, disabled = false, hint = null }) {
 export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, priv, conn, hud, total, drawer, onExit, onDrawer, onReady, readyBusy, readyCount, playerCount, pen = false, penAvail = false, onPen = () => {},
   config = null, frozenAt = null, pause = null, live = null, spectator = false,
   speed = null, onSpeed = () => {}, speedDisabled = false, speedHint = null,
-  spectators = null, myId = null, isHost = false, onRemoveSpectator = null, room = null }) {
+  spectators = null, myId = null, isHost = false, onRemoveSpectator = null, room = null, specBubbles = null }) {
   const phase = pub?.phase;
   const boss = isBossPhase(phase);
   const lp = boss && Number.isFinite(pub?.teamLp) ? pub.teamLp : Number.isFinite(priv?.lp) ? priv.lp : null;
@@ -521,7 +533,8 @@ export const TopBar = modComponent('game.hud.topBar', function TopBar({ pub, pri
       <div class="gtop__meta">
         <div class="gtop__net">
           <${PingPill} ms=${conn?.ping} online=${conn?.status === 'online'} />
-          <${SpectatorPill} spectators=${spectators} myId=${myId} isHost=${isHost} onRemove=${onRemoveSpectator} />
+          <${SpectatorPill} spectators=${spectators} myId=${myId} isHost=${isHost} onRemove=${onRemoveSpectator}
+            bubbles=${specBubbles} ttl=${(config?.timers?.chatBubble ?? 3) * 1000} />
         </div>
         ${pub?.difficulty ? html`<${DifficultyTag} difficulty=${pub.difficulty} size="sm" />` : null}
         ${pub?.test ? html`<${TestMark} class="gtop__test" />` : null}

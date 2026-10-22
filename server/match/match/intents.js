@@ -75,6 +75,14 @@ export class MatchIntents {
   emote(ps, id) {
     if (!EMOTES.includes(id)) return fail(ERR.BAD_MSG, 'unknown emote');
     const now = this.sched.now();
+    // [local-patch 2026-10-22] a spectator seat may emote too: its stand-in (watch.js _spectator) is frozen — no
+    // lastEmoteAt to write, so the cooldown lives on the match keyed by the seat's id; no AI reacts to a spectator.
+    if (ps.spectator) {
+      if (now - (this.spectatorEmoteAt.get(ps.playerId) ?? -Infinity) < EMOTE_COOLDOWN_MS) return fail(ERR.RATE);
+      this.spectatorEmoteAt.set(ps.playerId, now);
+      this.broadcast({ t: 'm.emote', playerId: ps.playerId, id });
+      return OK;
+    }
     if (now - ps.lastEmoteAt < EMOTE_COOLDOWN_MS) return fail(ERR.RATE);
     ps.lastEmoteAt = now;
     this.broadcast({ t: 'm.emote', playerId: ps.playerId, id });

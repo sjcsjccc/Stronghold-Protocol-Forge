@@ -119,4 +119,7 @@ export const actions = {
   // room-level intent (NOT g.*): the host frees a spectator seat while the match runs — the server takes room.removeSpectator at
   // any time (server/lobby.js removeSpectator), the game screen had no entry for it (ui/hud.js SpectatorPill; GitHub #120)
   removeSpectator: (playerId) => act('room.removeSpectator', { playerId }, { sfx: 'back' }),
+  // [local-patch 2026-10-22] room-level intent (NOT g.*): the host kicks a seated human while the match runs — the same
+  // room.kick as the lobby's, which now routes the mid-match leave (onLeave → the 中途退出 settlement)
+  kickPlayer: (seat, playerId) => act('room.kick', { seat, playerId }, { sfx: 'back' }),
 };

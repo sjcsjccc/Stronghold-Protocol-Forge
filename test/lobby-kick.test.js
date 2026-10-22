@@ -1,5 +1,6 @@
-// test/lobby-kick.test.js — room.kick (community report #17, owner approved): before the match the host removes another
-// human like an AI seat (server/lobby.js kick). The player gets room.closed {kicked} (now, or on the next resume when
+// test/lobby-kick.test.js — room.kick (community report #17, owner approved): the host removes another human — before
+// the match like an AI seat, and ([local-patch 2026-10-22]) while it runs, which takes the 中途退出 settlement
+// (server/lobby.js kick). The player gets room.closed {kicked} (now, or on the next resume when
 // offline), the reconnect token no longer leads back to the seat, and the player may join again (no ban) [ASSUMED].
 // The message names the confirmed player too: a seat that changed hands while the host's dialog was open is refused.
 import { describe, test, before, after, afterEach } from 'node:test';
@@ -112,7 +113,7 @@ describe('room.kick (lobby)', () => {
     await err(again, { t: 'room.ready', ready: true }, ERR.NOT_IN_ROOM);
   });
 
-  test('refusals: not the host, yourself, an AI seat, an empty seat, during a match', async () => {
+  test('refusals: not the host, yourself, an AI seat, an empty seat', async () => {
     const host = await pool.player('Host');
     const st = await createRoom(host);
     const guest = await pool.player('Guest');
@@ -127,11 +128,31 @@ describe('room.kick (lobby)', () => {
     await err(host, { t: 'room.kick', seat: 1 }, ERR.BAD_MSG);
     const stranger = await pool.player('Stranger');
     await err(stranger, { t: 'room.kick', seat: 1, playerId: guest.id }, ERR.NOT_IN_ROOM);
+  });
+
+  // [local-patch 2026-10-22] the match no longer blocks room.kick: the kicked seat takes the 中途退出 settlement
+  // (removeMember → match.onLeave), the player is told room.closed {kicked} and cannot rejoin while the match runs.
+  test('during a match: the kicked human hears room.closed {kicked}, the seat reads disconnected, no rejoin mid-match', async () => {
+    const host = await pool.player('Host');
+    const st = await createRoom(host);
+    const guest = await pool.player('Guest');
+    await joinRoom(guest, st.code);
     await ok(guest, { t: 'room.ready', ready: true });
     await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.ready);
     await ok(host, { t: 'room.start' });
     await host.waitFor('room.state', (s) => s.inMatch === true);
-    await err(host, { t: 'room.kick', seat: 1, playerId: guest.id }, ERR.ROOM_STARTED);
+    await guest.waitFor('m.public'); // the guest is in the running match when it happens
+    guest.clearInbox();
+    await err(guest, { t: 'room.kick', seat: 0, playerId: host.id }, ERR.NOT_HOST);
+    await ok(host, { t: 'room.kick', seat: 1, playerId: guest.id });
+    assert.equal((await guest.waitFor('room.closed')).reason, 'kicked');
+    // the seat is kept while the match runs (the match heard onLeave) but reads disconnected; no `left` row: room.state
+    // folds it into connected=false (server/lobby.js toState)
+    await host.waitFor('room.state', (s) => seatOf(s, guest.id)?.connected === false);
+    await err(guest, { t: 'room.join', code: st.code }, ERR.ROOM_STARTED); // no rejoin mid-match (no ban afterwards)
+    await err(host, { t: 'room.kick', seat: 1, playerId: guest.id }, ERR.BAD_TARGET); // already out
+    // (no "the match goes on" here: StubMatch.maybeFinish ends its match once every remaining human is ready — the
+    // real Match's onLeave → _quit keeps it running, the same path a voluntary mid-match leave takes, covered in ps100)
   });
 
   test('a seat that changed hands while the host confirmed is refused: the newcomer stays (review of #17)', async () => {

@@ -72,7 +72,8 @@
 // eliminated spectator) frames their half and keeps the ‹ › pill (with 返回战场); an open bond popup closes when the
 // strip changes hands.
 // Spectator seats (community report #26, a remake feature): a spectator has no m.private and plays like an ELIMINATED
-// player — no shop, no ready, no emotes (▸ [ASSUMED] off), the server auto-observes the first field of every battle, a
+// player — no shop, no ready ([local-patch 2026-10-22] it does emote: the wheel works, its bubble floats beside the
+// 观战席 capsule), the server auto-observes the first field of every battle, a
 // team row → 前往查看 any player; in 休整期 / 机变 / round start it is shown the first player's board by itself (once per
 // phase). Its pill reads 观战中, never "你已被淘汰"; its exit only leaves the seat (ui/matchChrome.js ExitModal).
 
@@ -973,6 +974,11 @@ function MatchScreen() {
     const e = emotes[emotes.length - 1];
     if (e && e.seq > lastEmote.current) { lastEmote.current = e.seq; if (e.playerId !== myId) audio.sfx('emote', { volume: 0.6 }); }
   }, [emotes]);
+  // [local-patch 2026-10-22] a spectator seat's emote bubbles: the team panel hangs bubbles on match players only
+  // (m.public.players has no spectator rows), so a spectator's floats beside the 观战席 capsule (ui/hud.js SpectatorPill)
+  const specBubbles = specFacts.list?.length && bubbles.size
+    ? specFacts.list.filter((s) => s && bubbles.has(s.playerId)).map((s) => ({ ...bubbles.get(s.playerId), name: s.name }))
+    : null;
 
   // ---- actions ----------------------------------------------------------------------------------------------
   const buy = useCallback(async (i) => {
@@ -983,6 +989,18 @@ function MatchScreen() {
     finally { buyPending.current.delete(i); }
   }, []);
   const removeSpectator = useCallback((playerId) => actions.removeSpectator(playerId), []);
+  // [local-patch 2026-10-22] the host kicks a seated human while the match runs (room.kick now works in-match): ask
+  // first — mid-match it is the 中途退出 settlement for the kicked seat and cannot be undone.
+  const kickPlayer = useCallback(async (p) => {
+    const name = p?.name || t('博士');
+    const go = await confirmDialog({
+      title: t('移出对局'),
+      text: t('将 {name} 移出本局？其席位按中途退出结算，本局无法再加入。', { name }),
+      okText: t('移出'),
+      danger: true,
+    });
+    if (go) await actions.kickPlayer(p.seat, p.playerId);
+  }, []);
   // 准备 with funds left asks first: the prep's end wipes them (community report #4; not 坎诺特, not at 0 funds, not
   // under AI 托管 — gameLogic.readyFundsPrompt). The button and Space both come here.
   const askingReady = useRef(false);
@@ -1707,7 +1725,8 @@ function MatchScreen() {
         } : null}
         speedDisabled=${!specFacts.isHost}
         speedHint=${t('对局倍速由房主统一控制（当前 ×{rate}），真人与 AI 同速', { rate: specFacts.isHost ? matchRate : (Number.isFinite(field?.speed) && field.speed > 0 ? Math.round((field.speed / 2) * 10) / 10 : 1) })}
-        spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom} />
+        spectators=${specFacts.list} myId=${myId} isHost=${specFacts.isHost} onRemoveSpectator=${removeSpectator} room=${modRoom}
+        specBubbles=${specBubbles} />
 
       <div class="gm__bonds">
         <button type="button" class="bonds-toggle" aria-expanded=${!bondsCollapsed} aria-controls="match-bond-strip"
@@ -1729,7 +1748,8 @@ function MatchScreen() {
       <${TeamPanel} pub=${pub} myId=${myId} watching=${watchingNow} bubbles=${bubbles} onWatch=${watchPlayer} cap=${gd.config?.lpCapPerRound ?? 10} uniteLocal=${uniteLocal}
         spMarks=${sp ? spMarks(sp, { solo }) : null}
         self=${Number.isFinite(priv?.lp) ? { lp: priv.lp, pending: liveLpNow.pending, unite: liveLpNow.unite, left: liveLpNow.left } : null}
-        observe=${cc ? { canObserve: (p) => observeTarget(p, pub, myId, { observing: watchingOther, ownDone: localDone }), observing: watchingOther, onBack: backHome } : null} />
+        observe=${cc ? { canObserve: (p) => observeTarget(p, pub, myId, { observing: watchingOther, ownDone: localDone }), observing: watchingOther, onBack: backHome } : null}
+        kick=${specFacts.isHost ? { onKick: kickPlayer } : null} />
 
       <div class="gm__effects"><${EffectsList} effects=${watchingOther && field ? (field.effects ?? null) : priv?.effects} /></div>
 
@@ -1764,7 +1784,8 @@ function MatchScreen() {
 
       <div class="gm__corner">
         ${showMetrics && metricsOpen ? html`<${CombatMetricsPanel} myId=${myId} onClose=${() => setMetricsOpen(false)} />` : null}
-        ${spectator ? null : html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
+        ${/* [local-patch 2026-10-22] a spectator seat emotes too (the server whitelists g.emote for it) */
+        html`<${EmoteWheel} open=${emoteOpen} onToggle=${setEmoteOpen} onSend=${(id) => actions.emote(id)} disabled=${conn.status !== 'online'} />`}
         ${showMetrics ? html`<button type="button" class="gm__gear gm__metrics" aria-label=${t('作战统计')} title=${t('作战统计')} aria-expanded=${metricsOpen}
           aria-controls="combat-metrics-panel" onKeyDown=${(e) => { if (e.key === ' ') e.stopPropagation(); }} onClick=${() => {
             setMetricsOpen(!metricsOpen);

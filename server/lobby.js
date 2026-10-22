@@ -16,10 +16,12 @@
 //     ▸ Changing the difficulty or the AI-picks-last option (co-op only) un-readies the other humans.
 //     ▸ room.start requires every other human to be connected and ready; the host's start counts as the host's
 //     ready (the host may still toggle room.ready for display).
-//   * room.kick {seat, playerId} (community report #17, owner approved): before the match only, the host removes another
-//     human like an AI seat (an AI seat stays room.removeBot's; never the host itself). `playerId` names the player the
+//   * room.kick {seat, playerId} (community report #17, owner approved): the host removes another human, before the
+//     match or while it runs ([local-patch 2026-10-22]; an AI seat stays room.removeBot's; never the host itself).
+//     `playerId` names the player the
 //     host confirmed: a seat that changed hands meanwhile (left, someone else joined) is refused with BAD_TARGET. The
-//     seat is freed at once and the player gets `room.closed {reason:'kicked'}` — now, or on the next resume when
+//     seat is freed at once (during a match it is kept with `left` and the match hears onLeave — the 中途退出
+//     settlement) and the player gets `room.closed {reason:'kicked'}` — now, or on the next resume when
 //     offline (with the result replay, as the grace timeout) —, so the reconnect token no longer leads back to the seat
 //     (it stays the player's identity: net.js sessions belong to players, not seats). ▸ No ban: the player may join
 //     again with the code.
@@ -159,8 +161,9 @@
 //     {empty} for its spectators). It receives room.state (`spectators: [{ playerId, name, connected }]`) and every match
 //     broadcast (m.public, m.ticker, m.emote, b.pool — public data); the match registers it (opts.spectators /
 //     addSpectator) and shows it fields like an eliminated player (b.start watch / m.field), never an m.private. It may
-//     only g.watch (the heavy bucket, like every watcher), g.leave / room.leave, and room.loadout / room.ownership /
-//     room.diy (stored for its session, never handed to the match); anything else → SPECTATOR (▸ emotes too). Host: room.removeSpectator { playerId } any
+//     only g.watch (the heavy bucket, like every watcher), g.emote ([local-patch 2026-10-22] the match keeps the seat's
+//     cooldown), g.leave / room.leave, and room.loadout / room.ownership /
+//     room.diy (stored for its session, never handed to the match); anything else → SPECTATOR. Host: room.removeSpectator { playerId } any
 //     time → room.closed {kicked} to it. A spectator in a LOBBY room may take a free player seat with room.join of the same
 //     code; a player never switches to spectating in place (ALREADY). Disconnect / grace / reconnect / expiry work as for
 //     a player seat (the seat is kept and given back on resume).
@@ -1981,15 +1984,19 @@ export class Lobby {  /**
     return OK;
   }
 
-  /** Host removes another human before the match (header: room.kick). */
+  /**
+   * Host removes another human — before the match or while it runs (header: room.kick). [local-patch 2026-10-22] the
+   * match no longer blocks it: removeMember branches on `room.match` itself (the seat is kept with `left`, the match
+   * hears onLeave → the 中途退出 settlement), so this body is one path for both.
+   */
   kick(session, { seat, playerId }) {
     const room = this.roomOf(session);
     if (!room) return fail(ERR.NOT_IN_ROOM);
     if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
-    if (room.match) return fail(ERR.ROOM_STARTED);
     this.dropReplay(room, session.playerId);
     const target = room.seats[seat];
-    if (!target || target.left) return fail(ERR.BAD_TARGET, 'seat holds no player');
+    if (!target) return fail(ERR.BAD_TARGET, 'seat holds no player');
+    if (target.left) return fail(ERR.BAD_TARGET, 'seat already left the match');
     if (target.playerId !== playerId) return fail(ERR.BAD_TARGET, 'seat changed hands'); // the confirmed player left meanwhile
     if (target.isBot) return fail(ERR.BAD_TARGET, 'seat holds an AI (room.removeBot)');
     if (target.playerId === session.playerId) return fail(ERR.BAD_TARGET, 'cannot kick yourself');
@@ -2719,8 +2726,8 @@ export class Lobby {  /**
       this.removeMember(room, session.playerId);
       return OK;
     }
-    // a spectator only watches (header): nothing else of it ever reaches the match
-    if (msg.t !== 'g.watch' && !(room.test && msg.t === 'g.test') && room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
+    // a spectator only watches and emotes (header): nothing else of it ever reaches the match
+    if (msg.t !== 'g.watch' && msg.t !== 'g.emote' && !(room.test && msg.t === 'g.test') && room.spectatorOf(session.playerId)) return fail(ERR.SPECTATOR);
     let res;
     try {
       res = room.match.handle(session.playerId, msg);

@@ -881,9 +881,16 @@ describe('websocket lobby', () => {
     await expectOk(late, { t: 'room.spectate', code: st.code }); // a running match: a spectator seat is still free
     const lateState = await late.waitFor('room.state', (s) => s.inMatch);
     assert.deepEqual(lateState.spectators.map((x) => x.playerId), [spec.id, late.id]);
-    for (const msg of [{ t: 'g.infoReady' }, { t: 'g.buy', slot: 0 }, { t: 'g.ready', ready: true }, { t: 'g.emote', id: EMOTES[0] }, { t: 'g.autoplay', on: true }]) {
+    // [local-patch 2026-10-22] g.emote left the SPECTATOR refusals: a spectator seat emotes, everyone hears it
+    for (const msg of [{ t: 'g.infoReady' }, { t: 'g.buy', slot: 0 }, { t: 'g.ready', ready: true }, { t: 'g.autoplay', on: true }]) {
       await expectError(spec, msg, ERR.SPECTATOR);
     }
+    host.clearInbox();
+    await expectOk(spec, { t: 'g.emote', id: EMOTES[0] });
+    const emoted = await host.waitFor('m.emote', (m) => m.playerId === spec.id);
+    assert.equal(emoted.id, EMOTES[0]);
+    await expectError(spec, { t: 'g.emote', id: EMOTES[0] }, ERR.RATE); // the match clock's cooldown, the seat's own
+    await expectError(spec, { t: 'g.emote', id: EMOTES[0] + ':nope' }, ERR.BAD_MSG); // the protocol whitelist, unchanged
     await expectOk(spec, { t: 'room.loadout', entries: {} }); // kept for its session, never handed to the match
     // drop and resume with the token: the seat is kept meanwhile and given back
     await late.terminate();

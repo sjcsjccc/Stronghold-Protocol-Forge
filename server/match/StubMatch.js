@@ -102,6 +102,11 @@ export class StubMatch {
     for (const s of opts.seats) {
       this.players.set(s.playerId, { ...s, left: false, ready: !!s.isBot, lastEmoteAt: -Infinity });
     }
+    /** @type {Map<string, {playerId:string, lastEmoteAt:number}>} spectator seats (opts.spectators / addSpectator) */
+    this.spectators = new Map();
+    for (const id of Array.isArray(opts.spectators) ? opts.spectators : []) {
+      this.spectators.set(id, { playerId: id, lastEmoteAt: -Infinity });
+    }
     this.phase = PHASE.LOBBY;
     this.deadline = 0;
     this.timer = null;
@@ -119,12 +124,38 @@ export class StubMatch {
     for (const p of this.players.values()) if (!p.isBot) this.sendFn(p.playerId, this.privateView(p));
   }
 
+  // [local-patch 2026-10-22] spectator-seat parity with the real Match: the lobby gates a spectator's g.* to
+  // g.watch / g.emote / g.publicFull, so the stub relays g.emote like a player's (1 s cooldown on the stub clock) and
+  // answers g.watch with BAD_TARGET (a stub has no fields to watch). opts.spectators / addSpectator register seats.
+  /** A spectator seat joined during the match (the lobby's callMatch in room.spectate). */
+  addSpectator(playerId) {
+    if (typeof playerId !== 'string' || !playerId || this.players.has(playerId) || this.disposed) return;
+    if (!this.spectators.has(playerId)) this.spectators.set(playerId, { playerId, lastEmoteAt: -Infinity });
+    this.sendFn(playerId, this.publicView()); // the real Match's addSpectator resyncs the newcomer's view too
+  }
+
+  /** The spectator left or was removed (the lobby's callMatch in removeMember / freeSpectatorSeat). */
+  removeSpectator(playerId) { this.spectators.delete(playerId); }
+
   /**
    * @param {string} playerId
    * @param {{ t: string }} msg validated intent
    * @returns {{ ok: true } | { error: string }}
    */
   handle(playerId, msg) {
+    const sp = this.spectators.get(playerId);
+    if (sp) {
+      if (this.disposed || this.ended) return { error: ERR.WRONG_PHASE };
+      if (msg?.t === 'g.emote') {
+        const now = this.now();
+        if (now - sp.lastEmoteAt < EMOTE_COOLDOWN_MS) return { error: ERR.RATE };
+        sp.lastEmoteAt = now;
+        this.broadcastFn({ t: 'm.emote', playerId, id: msg.id });
+        return { ok: true };
+      }
+      if (msg?.t === 'g.watch') return { error: ERR.BAD_TARGET };
+      return { error: ERR.SPECTATOR };
+    }
     const p = this.players.get(playerId);
     if (!p || p.isBot || p.left) return { error: ERR.NOT_IN_ROOM };
     if (this.disposed || this.ended || !msg || !GAME_TYPES.has(msg.t)) return { error: ERR.WRONG_PHASE };
@@ -137,10 +168,9 @@ export class StubMatch {
       }
     } else if (msg.t === 'g.emote') {
       const now = this.now();
-      if (now - p.lastEmoteAt >= EMOTE_COOLDOWN_MS) {
-        p.lastEmoteAt = now;
-        this.broadcastFn({ t: 'm.emote', playerId, id: msg.id });
-      }
+      if (now - p.lastEmoteAt < EMOTE_COOLDOWN_MS) return { error: ERR.RATE }; // [local-patch 2026-10-22] like the real Match's reply
+      p.lastEmoteAt = now;
+      this.broadcastFn({ t: 'm.emote', playerId, id: msg.id });
     }
     return { ok: true };
   }

@@ -121,6 +121,12 @@
 .specpill .btn__icon { width: .18rem; height: .18rem; color: var(--mint-500); }
 .specpill__num { font-size: .18rem; font-weight: 700; color: var(--mint-400); }
 .specpill.is-me { --btn-bd: var(--mint-600); }
+/* [local-patch 2026-10-22] a spectator seat's live emote bubbles float under the capsule (the team panel only hangs
+   bubbles on match players, m.public.players has no spectator rows) */
+.gtop__net { position: relative; }
+.specpill__bubbles { position: absolute; top: calc(100% + .04rem); left: 0; display: flex; flex-direction: column; gap: .04rem; z-index: 30; pointer-events: none; }
+.specpill__bubble { display: flex; align-items: center; gap: .05rem; }
+.specpill__who { font-size: .13rem; color: var(--mint-300); text-shadow: 0 .01rem .03rem rgba(0, 0, 0, .9); white-space: nowrap; }
 /* the roster inside its modal */
 .spec__roster { display: flex; flex-direction: column; gap: .06rem; margin: 0 0 .1rem; padding: 0; list-style: none; }
 .spec__row { display: flex; align-items: center; gap: .1rem; min-height: .44rem; padding: .04rem .1rem; background: rgba(255, 255, 255, .03); border: 1px solid transparent; }
@@ -516,6 +522,10 @@
 .team__status.is-red, .team__status.is-offline { color: var(--red-premium); }
 .team__eye { color: var(--amber); display: grid; }
 .team__eye .icon { width: .2rem; height: .2rem; }
+/* [local-patch 2026-10-22] the host's mid-match kick on a seated human's row (room.kick; the game screen asks first) */
+.team__kick { display: grid; place-items: center; width: .2rem; height: .2rem; padding: 0; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.team__kick .icon { width: .16rem; height: .16rem; }
+.team__kick:hover { color: var(--red-premium); }
 .team__row.is-self .pavatar { box-shadow: 0 0 0 2px var(--mint-500), 0 0 .18rem rgba(23, 249, 183, .35); }
 .team__row.is-watched .pavatar { box-shadow: 0 0 0 2px var(--amber), 0 0 .18rem rgba(246, 163, 41, .45); }
 .team__row.is-dead .team__name { color: var(--text-dim); text-decoration: line-through; }
