@@ -41,7 +41,6 @@ function randomIntent(rng, m, ps) {
     // [local-patch 2026-10-22] 超限：词条三选一 / 战术撤退 / 战斗内 1×/2×（普通局全是合法的拒答）
     case 'g.traitChoice': return { t, idx: rng.int(3) };
     case 'g.traitRetreat': return { t };
-    case 'g.combatSpeed': return { t, speed: 1 + rng.int(2) };
     case 'g.art': return { t, itemUid: uid(), row: rng.int(19), col: rng.int(21) };
     case 'g.reward': case 'g.choice': return { t, idx: rng.int(6) };
     case 'g.ready': return { t, ready: rng() < 0.4 };
