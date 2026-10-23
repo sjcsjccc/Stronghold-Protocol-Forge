@@ -8,6 +8,7 @@
 
 | # | 提交 | 文件 | 改动 | 一句话 |
 |---|------|------|------|--------|
+| 17 | 超限 Boss 轮休整期预览 | `shared/infiniteMode.js` `server/match/infiniteWaves.js` `public/js/ui/gameLogic/camera.js` `server/match/match/testCommands.js` `test/match/infinite.test.js` `test/ui/random-boss-pairs.test.js` | 超限的 Boss 轮（R20/25/30…）休整期两处缺口：①`buildInfiniteBossWave` 的领袖条目补官方同款 `preview.start` 出生格（取 Boss 场路径起点，正是官方领袖门 (2,10)/(5,10)）——客户端 `leaderStand` 只认带 start 的 boss 条目，没有它领袖不上场；②客户端 `prepCamera`/`teamFrameIds` 只认 `round===bossRound(14)/hiddenRound(15)`，超限 Boss 轮切不进 Boss 场准备相机（留在普通战场=笔围栏一群小怪、场上没领袖）——判定提到 shared（`isInfiniteBossRound`），服务端重导出同一份；③测试控制台的轮次跳转上限从官方 lastRound(15) 放开：超限没有「最后一轮」，上限用 TEST_ROUND_MAX（仅测试房、房主可用）。浏览器实测（本地测试房）：R20 休整期切 Boss 场相机、领袖站场带血条；普通模式 R14 本就正常（领袖站场）未动 | 休整期看得到要打的 Boss，而不是一群小怪 |
 | 1 | AI 模拟切片 | `server/match/fields.js` | `HEADLESS_SLICE_MS` 8→40 | 真人清场后等 AI 出结果快 5 倍 |
 | 2 | 大厅在线人数 | `public/js/screens/lobby.js` | +15s 轮询 /healthz 直写 DOM | 修复上游「N 名博士在线」恒死值 |
 | 3 | 战局一览 | `server/lobby.js` `shared/protocol.js` | +`room.list` 分发与声明 | 唤醒客户端沉睡的大厅观战 UI |

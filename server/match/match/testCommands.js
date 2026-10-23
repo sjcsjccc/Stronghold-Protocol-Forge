@@ -43,7 +43,7 @@
 //     pieces. computeBonds still decides the tier; a mode-disabled bond is refused.
 
 import { ERR, PHASE, layerGainRoom } from '../../../shared/constants.js';
-import { parseTestArgs, isTestCommand, TEST_LOG_CAP, TEST_RATE_COUNT, TEST_RATE_WINDOW_MS } from '../../../shared/testMode.js';
+import { parseTestArgs, isTestCommand, TEST_LOG_CAP, TEST_RATE_COUNT, TEST_RATE_WINDOW_MS, TEST_ROUND_MAX } from '../../../shared/testMode.js';
 import { OK, fail } from './common.js';
 
 const BLOCKED = new Set([PHASE.LOBBY, PHASE.COMBAT, PHASE.UNITE, PHASE.FINAL_ASSAULT, PHASE.HIDDEN_CORE, PHASE.RESULT]);
@@ -246,7 +246,9 @@ export class MatchTestCommands {
     if (blocked) return blocked;
     if (this.phase === PHASE.INFO_CHECK || this.phase === PHASE.BAND_DRAFT || !ps.bandId) return fail(ERR.WRONG_PHASE);
     const hidden = this.gd.hiddenRound;
-    const hi = Math.max(this.gd.lastRound || 0, hidden > 0 ? hidden : 0);
+    // [local-patch 2026-10-23] 超限没有「最后一轮」（R16+ 无限波次），封在官方 lastRound 会让测试控制台
+    // 在超限局永远跳不进 R16+；放开到 TEST_ROUND_MAX（仍受协议层 1–99 约束）。
+    const hi = this.isInfinite ? TEST_ROUND_MAX : Math.max(this.gd.lastRound || 0, hidden > 0 ? hidden : 0);
     if (round > hi) return fail(ERR.BAD_TARGET, `round|${JSON.stringify({ hi })}`);
     this.eliminateBroken();
     if (!this.alivePlayers().length) {

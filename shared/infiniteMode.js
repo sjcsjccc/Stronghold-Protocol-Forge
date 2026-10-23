@@ -58,6 +58,18 @@ export function isInfiniteMode(mode) {
 export const isInfiniteRoomMode = isInfiniteMode;
 
 /**
+ * 超限的 Boss 轮：R16 起每 5 回合一次（R20、R25、R30 …）。住在 shared —— 客户端的准备相机
+ * （ui/gameLogic/camera.js）也要靠它把 Boss 轮的休整期切到 Boss 场，服务端的出怪/结算口径
+ * （server/match/infiniteWaves.js，原定义处）从这里重导出，两端永不走样。
+ * @param {number} round
+ * @returns {boolean}
+ */
+export function isInfiniteBossRound(round) {
+  const r = Number(round) || 1;
+  return r >= 16 && r % 5 === 0;
+}
+
+/**
  * 随着波次计算敌方控制抗性 (Tenacity Scaling)
  * R <= 15: 0% 抗性（遵循原版）
  * R >= 16: 每波递增 2%，最高 75%

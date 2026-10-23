@@ -1,6 +1,7 @@
 // ui/gameLogic/camera.js — prep camera, boss-field tile mapping, owner band. Re-exported from ../gameLogic.js.
 
 import { PHASE } from '../../../../shared/constants.js';
+import { isInfiniteBossRound } from '../../../../shared/infiniteMode.js';
 import { fieldTile as layoutFieldTile, boardTile as layoutBoardTile, mapRectOf } from '../../render/layout.js';
 import { int, isObj } from './shared.js';
 
@@ -38,7 +39,11 @@ function prepPair(pub, myId) {
 export function prepCamera(pub, myId, layout = null) {
   const normal = { kind: 'prep', opts: { rect: mapRectOf(layout, 'prep'), side: 'L' } };
   const r = pub?.round;
-  if (!Number.isInteger(r) || r <= 0 || !(r === pub.bossRound || r === pub.hiddenRound)) return normal;
+  // [local-patch 2026-10-23] 超限的 Boss 轮（R20/25/30…）也进 Boss 场准备：pub.bossRound 还是官方的 14，
+  // 只认它的话超限 Boss 轮的休整期留在普通战场——笔围栏里一群小怪、场下没有领袖（业主 2026-10-23）。
+  const bossPrepRound = Number.isInteger(r) && r > 0
+    && (r === pub.bossRound || r === pub.hiddenRound || (pub.isInfinite === true && isInfiniteBossRound(r)));
+  if (!bossPrepRound) return normal;
   const idx = prepPair(pub, myId).indexOf(myId);
   if (idx < 0) return normal; // eliminated / unknown: no board of its own on the boss field
   return { kind: 'bossPrep', opts: { side: idx % 2 === 1 ? 'R' : 'L' } };
@@ -63,7 +68,9 @@ export function teamFrameIds(pub, myId) {
   const me = players.find((p) => p.playerId === myId);
   if (!me || me.alive === false) return none;
   const r = pub.round;
-  const bossRound = Number.isInteger(r) && r > 0 && (r === pub.bossRound || r === pub.hiddenRound);
+  // [local-patch 2026-10-23] 与 prepCamera 同口径：超限的 Boss 轮（R20/25/30…）也算
+  const bossRound = Number.isInteger(r) && r > 0
+    && (r === pub.bossRound || r === pub.hiddenRound || (pub.isInfinite === true && isInfiniteBossRound(r)));
   if (pub.phase === PHASE.FINAL_ASSAULT || pub.phase === PHASE.HIDDEN_CORE) {
     const f = (Array.isArray(pub.fields) ? pub.fields : []).find((x) => isObj(x) && (x.kind === 'boss' || x.kind === 'hidden') && Array.isArray(x.players) && x.players.includes(myId));
     return f && f.players.length > 1 ? new Set(f.players) : none;

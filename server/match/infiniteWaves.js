@@ -3,19 +3,11 @@
 
 import { weightedPick, gateOf } from './waves.js';
 import { bossPoolHp } from './finalAssault.js';
-import { enemyInfiniteScale, getInfiniteBossHp } from '../../shared/infiniteMode.js';
+import { enemyInfiniteScale, getInfiniteBossHp, isInfiniteBossRound } from '../../shared/infiniteMode.js';
 import { createRng, deriveSeed } from '../sim/rng.js';
 
-/**
- * 判断当前轮次是否为 Boss 关
- * R16 起每 5 回合一次 Boss 战（R20, R25, R30 ...）
- * @param {number} round
- * @returns {boolean}
- */
-export function isInfiniteBossRound(round) {
-  const r = Number(round) || 1;
-  return r >= 16 && r % 5 === 0;
-}
+// Boss 轮的判定住在 shared/infiniteMode.js（客户端的准备相机用同一份），这里重导出保住既有 import 面。
+export { isInfiniteBossRound };
 
 /**
  * 判断当前轮次是否为双 Boss 关
@@ -329,6 +321,14 @@ export function buildInfiniteBossWave(gd, rng, round, routes = null) {
     const rec = gd.boss(bossId);
     return (rec && typeof rec.enemyKey === 'string' && rec.enemyKey) || bossId;
   };
+  // [local-patch 2026-10-23] 领袖的出生格（官方波次 previewInfo 的同款字段）：客户端 prepfield.js leaderStand
+  // 只认**带 start 的 boss 条目**，没有它 Boss 轮的休整期就不会把领袖立在 Boss 场上（业主 2026-10-23
+  // 「休整期应该能看到 boss，但是显示是小怪」）—— Boss 场镜头下笔围栏本来就不画，场上再没有领袖就什么都没有了。
+  const startOf = (routeIndex) => {
+    const s = Array.isArray(routes) && routes[routeIndex] ? routes[routeIndex].start : null;
+    return Array.isArray(s) && s.length >= 2 && s.every(Number.isFinite) ? [s[0], s[1]] : null;
+  };
+  const primaryStart = startOf(0);
   const spawns = [
     {
       time: 3.0,
@@ -347,7 +347,8 @@ export function buildInfiniteBossWave(gd, rng, round, routes = null) {
         atkMul: scale.atkMul,
         speedMul: scale.speedMul,
       },
-      preview: { fly: false, elite: false, boss: true },
+      // gate 与官方领袖波次同款（gateOf 的 leader 行偏移）；start 缺路径时退回「只在笔里显示」的旧行为
+      preview: { gate: gateOf(primaryStart, true), ...(primaryStart ? { start: primaryStart } : {}), fly: false, elite: false, boss: true },
     },
   ];
 
@@ -412,7 +413,10 @@ export function buildInfiniteBossWave(gd, rng, round, routes = null) {
         atkMul: scale.atkMul,
         speedMul: scale.speedMul,
       },
-      preview: { fly: false, elite: false, boss: true },
+      preview: (() => {
+        const st = startOf(routes && routes.length > 1 ? 1 : 0);
+        return { gate: gateOf(st, true), ...(st ? { start: st } : {}), fly: false, elite: false, boss: true };
+      })(),
     });
   }
 

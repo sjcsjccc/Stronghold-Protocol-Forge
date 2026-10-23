@@ -161,4 +161,28 @@ describe('超限模拟·联机 (infinite)', () => {
     drive(h, () => m.trait == null || h.ended != null);
     assert.equal(m.traitMods.length, 2, 'the bot pick landed in the shared pool');
   });
+
+  test('R20 休整期的敌方预览带领袖出生格（nextEnemies start），客户端 leaderStand 才能把 Boss 立上 Boss 场', () => {
+    const h = makeMatch({
+      mode: 'infinite', difficulty: 'HARD', humans: 2, seed: 77, fake: true, hostId: 'p_0',
+      script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 20000 } : { duration: 1, leaks: {} }),
+    }).start();
+    const m = h.m;
+    h.autoHumans();
+    drive(h, () => m.phase === 'PREP' && m.round === 20);
+    assert.equal(m.round, 20, 'reached the boss round prep');
+    for (const ps of m.alivePlayers()) {
+      const list = m.nextEnemiesFor(ps);
+      const bosses = list.filter((e) => e.boss);
+      assert.ok(bosses.length >= 1, 'the preview carries the leader');
+      for (const b of bosses) {
+        assert.ok(Array.isArray(b.start) && b.start.length === 2 && b.start.every(Number.isFinite),
+          `the leader entry has a spawn tile (got ${JSON.stringify(b.start)})`);
+        // Boss 场显示行 0–5（prepfield.leaderStand 的界）；列在镜像界内
+        assert.ok(b.start[0] >= 0 && b.start[0] <= 5, `start row ${b.start[0]} is on the boss field`);
+        assert.ok(b.start[1] >= 0 && b.start[1] <= 20, `start col ${b.start[1]} is on the boss field`);
+      }
+    }
+    m.dispose();
+  });
 });
