@@ -26,6 +26,8 @@ import { catalog, personalApplied, isPersonalCosmetic, cosmeticPlugins, installe
 import { resolveThemeVars, themeVarsOf } from '../../../shared/plugins/theme.js';
 import { hasAnySkinChoices } from './skins.js';
 import { describeError, toast } from './toasts.js';
+import { askPersistStorage, storagePersisted } from '../assetCache.js'; // [local-patch 2026-10-23] 素材存储节
+import { pruneImportedAssets } from '../assetPack.js'; // [local-patch 2026-10-23] 素材存储节
 import { pluginMicro } from './pluginTag.js';
 import { fxAvailable } from '../render/vfx/available.js';
 import { resolveOfficialFx } from '../render/vfx/tier.js';
@@ -309,6 +311,61 @@ function DiagSection() {
   </section>`;
 }
 
+// [local-patch 2026-10-23] 素材存储（照上游 master 设置界面的 STORAGE 节补进）：申请浏览器**持久保存**下载/导入的
+// 素材缓存（navigator.storage.persist，不申请的话浏览器在空间紧张时可能清掉），以及清理服务器清单已不再引用的
+// 旧版本导入素材。助手（assetCache 的 storagePersisted/askPersistStorage、assetPack 的 pruneImportedAssets）本来就在。
+const PERSIST_NOTES = {
+  granted: N_('素材缓存已持久保存：浏览器不会因空间不足自动清理它。'),
+  denied: N_('浏览器暂时没有同意持久保存——多下载或导入几次素材后通常就会同意。'),
+  insecure: N_('持久保存需要通过 https 或 localhost 访问本站。'),
+  unsupported: N_('当前浏览器不支持持久存储。'),
+};
+
+function StorageSection() {
+  const [persist, setPersist] = useState('checking');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    storagePersisted().then((v) => { if (live) setPersist(v == null ? 'unsupported' : v ? 'granted' : 'denied'); });
+    return () => { live = false; };
+  }, []);
+  const ask = async () => {
+    setBusy(true);
+    try {
+      const ok = await askPersistStorage();
+      if (ok == null) setPersist('unsupported');
+      else {
+        setPersist(ok ? 'granted' : 'denied');
+        if (ok) toast(t('浏览器已同意持久保存素材缓存。'));
+      }
+    } finally { setBusy(false); }
+  };
+  const prune = async () => {
+    setBusy(true);
+    try {
+      const { removed, removedFiles } = await pruneImportedAssets();
+      toast(removed > 0 ? t('已清理 {n} 个旧版本素材（{files} 个文件）。', { n: removed, files: removedFiles }) : t('没有需要清理的旧版本素材。'));
+    } catch (e) {
+      toast(describeError(e));
+    } finally { setBusy(false); }
+  };
+  const note = persist === 'checking' ? null : (PERSIST_NOTES[persist] ? t(PERSIST_NOTES[persist]) : null);
+  return html`<section class="set-storage" aria-labelledby="set-storage-title">
+    <div class="set-keys__head">
+      <span class="set-row__label" id="set-storage-title">${t('素材存储')}<${MicroLabel}>STORAGE<//></span>
+      <div>
+        <${Button} variant="ghost" size="sm" class="set-storage__persist" data-testid="storage-persist"
+          disabled=${busy || persist === 'granted' || persist === 'unsupported' || persist === 'insecure'}
+          onClick=${ask}>${t('申请持久保存')}<//>
+        <${Button} variant="ghost" size="sm" class="set-storage__prune" data-testid="storage-prune"
+          disabled=${busy} onClick=${prune}>${t('清理旧版本素材')}<//>
+      </div>
+    </div>
+    <p class="set-hint">${t('下载与导入的素材保存在这个浏览器里；手动清除网站数据会删除它们，iOS Safari 约 7 天不打开本站也可能清除。')}</p>
+    ${note ? html`<p class="set-keys__note" role="status" aria-live="polite" data-testid="storage-persist-note">${note}</p>` : null}
+  </section>`;
+}
+
 /**
  * 配音语言 (v0.7.1): the dub every operator speaks unless 干员详情 → 配音 overrides it for one of them.
  *
@@ -483,6 +540,7 @@ export function SettingsModal({ open, onClose }) {
       <${ScreenFitSection} />
       <${HotkeySection} keys=${s.keys} touchUi=${touchUi} />
       <${CosmeticSection} />
+      <${StorageSection} />
       <${DiagSection} />
       <p class="set-hint">${touchUi ? t('触屏操作：点击单位选中（撤退 / 出售）· 长按单位或卡牌查看详情 · 拖动部署后滑动选择朝向') : t('右键查看详情')}</p>
     </div>

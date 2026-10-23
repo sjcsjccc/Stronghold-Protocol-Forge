@@ -2608,5 +2608,13 @@
   "轮到": "Turn: ",
   "其他博士": "another Doctor",
   "抉择…": " picking…",
-  "超时将自动随机代选": "a random card is auto-picked on timeout"
+  "超时将自动随机代选": "a random card is auto-picked on timeout",
+  "素材缓存已持久保存：浏览器不会因空间不足自动清理它。": "The asset cache is persistent: the browser will not evict it under storage pressure.",
+  "浏览器暂时没有同意持久保存——多下载或导入几次素材后通常就会同意。": "The browser has not granted persistence yet — it usually grants after a few downloads or imports.",
+  "持久保存需要通过 https 或 localhost 访问本站。": "Persistent storage requires https or localhost.",
+  "当前浏览器不支持持久存储。": "This browser does not support persistent storage.",
+  "下载与导入的素材保存在这个浏览器里；手动清除网站数据会删除它们，iOS Safari 约 7 天不打开本站也可能清除。": "Downloaded and imported assets live in this browser. Clearing site data removes them; iOS Safari may also drop them after about 7 days away.",
+  "浏览器已同意持久保存素材缓存。": "The browser granted persistent storage for the asset cache.",
+  "已清理 {n} 个旧版本素材（{files} 个文件）。": "Pruned {n} outdated assets ({files} files).",
+  "没有需要清理的旧版本素材。": "Nothing to prune."
 }
