@@ -259,6 +259,13 @@ export function TitleScreen() {
           <${FullscreenButton} class="title-fs" />
         </div>
       </div>
+      ${/* [local-patch 2026-10-23] 主页的「下载完整素材 / 导入素材包」照上游 0.3.1（nativeShell 壳里不显示，网页/安卓壳都显示）——
+        fork 的组件与 title-assets 样式一直在，只有这一段渲染没了 */
+        (globalThis.AndroidNative?.isNativeApp?.() ? globalThis.AndroidNative : null) ? null : html`<div class="title-assets">
+        <${AssetDownloadButton} />
+        <${AssetImportButton} />
+      </div>
+      `}
     </main>
 
     <${SettingsModal} open=${settingsOpen} onClose=${() => setSettingsOpen(false)} />
