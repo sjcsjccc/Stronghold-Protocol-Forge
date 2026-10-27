@@ -64,6 +64,12 @@ describe('room.setListed (lobby)', () => {
     const before = await guest.waitFor('room.list');
     assert.equal(before.ok, true);
     assert.ok(before.rooms.some((r) => r.code === code), '默认公开：一览可见');
+    // [local-patch 2026-10-27] 条目带 mode（客户端据此过滤单人房、标注超限房）
+    const entry = before.rooms.find((r) => r.code === code);
+    assert.equal(entry.mode, 'coop', 'room.list 条目带 mode');
+    assert.equal(entry.inMatch, false, '未开局：inMatch=false（可加入）');
+    assert.equal(entry.humans, 2, '两名真人');
+    assert.ok(Number.isInteger(entry.maxSeats) && entry.maxSeats >= entry.humans, 'maxSeats 是这一房的座位数');
 
     // 隐藏
     await ok(host, { t: 'room.setListed', code, listed: false });
@@ -79,5 +85,16 @@ describe('room.setListed (lobby)', () => {
     await guest.send({ t: 'room.list' });
     const resumed = await guest.waitFor('room.list');
     assert.ok(resumed.rooms.some((r) => r.code === code), '重新公开后一览恢复');
+  });
+
+  test('单人房以 mode=solo 出现（客户端据此把它挡在缺人卡与战局一览之外）', async () => {
+    const solo = await pool.player('独行者');
+    await ok(solo, { t: 'room.create', mode: 'solo', difficulty: 'FUNNY' });
+    const st = await solo.waitFor('room.state', (s) => s.hostId === solo.id);
+    await solo.send({ t: 'room.list' });
+    const list = await solo.waitFor('room.list');
+    const entry = list.rooms.find((r) => r.code === st.code);
+    assert.ok(entry, '单人房仍在一览里（room.list 的口径是全量公开房间）');
+    assert.equal(entry.mode, 'solo', '条目带 mode=solo —— 客户端按它过滤');
   });
 });

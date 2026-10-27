@@ -39,7 +39,7 @@ import { ResumeMatchButton } from '../ui/resumeMatch.js';
 // 助战（W-助战, DESIGN §28.31 的入口）：大厅顶部这个按钮打开助战选择面板，与房间里那一个同一个组件。
 import { SupportButton } from './support.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
-import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR, MIN_SEATS, clampSeats, isInfiniteMode } from '../../../shared/constants.js'; // [local-patch 2026-10-22] +isInfiniteMode
+import { DIFFICULTIES, DIFFICULTY_NAMES, DIFFICULTY_COLORS, ROOM_CODE_LEN, MAX_SEATS, MAX_SPECTATORS, modeIdFor, ERR, MIN_SEATS, clampSeats, isInfiniteMode, isSoloRoomMode } from '../../../shared/constants.js'; // [local-patch 2026-10-22] +isInfiniteMode；[2026-10-27] +isSoloRoomMode
 import { C2S as SERVER_C2S } from '../../../shared/protocol.js'; // [local-patch 2026-10-20] room.list 能力探测
 import { isOwnerName } from '../ui/ownerName.js'; // [local-patch] 缺人同盟卡的服主名高亮
 import { html, confirmDialog, Button, Icon, MicroLabel, Modal, PingPill, Spinner, DifficultyIcon, TextField } from '../ui/components.js';
@@ -153,7 +153,8 @@ const CAN_LIST = HAS('room.list');
 /** 缺人同盟: public alliance rooms still waiting for doctors, fewest empty seats first (closest to starting), joinable in one click. */
 export function recruitingRooms(rooms) {
   return (Array.isArray(rooms) ? rooms : [])
-    .filter((r) => r && typeof r.code === 'string' && !r.inMatch && r.humans > 0 && r.humans < (r.maxSeats || MAX_SEATS))
+    // [local-patch 2026-10-27] 单人房（solo/solo_infinite）既不能加入也不能观战，不进缺人卡（此前会以「缺 N 人」混入）
+    .filter((r) => r && typeof r.code === 'string' && !isSoloRoomMode(r.mode) && !r.inMatch && r.humans > 0 && r.humans < (r.maxSeats || MAX_SEATS))
     .sort((a, b) => ((a.maxSeats || MAX_SEATS) - a.humans) - ((b.maxSeats || MAX_SEATS) - b.humans) || b.humans - a.humans);
 }
 
@@ -191,6 +192,88 @@ function RecruitCard({ rooms, online, onJoin, onAll, onCreate }) {
       </div>`}
     </div>
   </section>`;
+}
+
+/**
+ * [local-patch 2026-10-27] 战局一览（补丁③的完整版）：列出**全部公开房间**——等待中的可加入，进行中的可观战。
+ * 数据源与缺人卡同一份 `room.list` 轮询；弹窗打开时立刻取一次，并每 4 秒跟一次（与卡片同一句文案）。
+ * 单人房（solo/solo_infinite）不列：它们既不能加入也不能观战。
+ */
+function RoomBrowser({ open, rooms, meta, online, onClose, onJoin, onSpectate, onRefresh }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = () => {
+    setRefreshing(true);
+    Promise.resolve(onRefresh && onRefresh()).catch(() => {}).finally(() => setRefreshing(false));
+  };
+  useEffect(() => {
+    if (!open) return undefined;
+    refresh();
+    const iv = setInterval(() => { if (!document.hidden) refresh(); }, 4000);
+    return () => clearInterval(iv);
+  }, [open]);
+  if (!open) return null;
+  const list = (Array.isArray(rooms) ? rooms : []).filter((r) => r && typeof r.code === 'string' && !isSoloRoomMode(r.mode));
+  const matches = list.filter((r) => r.inMatch).length;
+  return html`<div class="modal mm-modal" role="presentation"
+      onMouseDown=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="modal__box mm-modal__box brackets" role="dialog" aria-modal="true" aria-label=${t('战局一览')}>
+      <div class="modal__stripe" aria-hidden="true"></div>
+      <header class="modal__head mm-modal__head">
+        <${MicroLabel} tone="mint">MATCH BROWSER<//>
+        <div class="mm-modal__title-row">
+          <h2 class="modal__title mm-modal__title">${t('战局一览')}</h2>
+          <button type="button" class="mm-modal__close" onClick=${onClose} aria-label=${t('关闭')}><${Icon} name="close" /></button>
+        </div>
+      </header>
+      <div class="mm-modal__body">
+        <div class="mm-stats-bar">
+          <div class="mm-stats-col"><span class="mm-stats-num mm-stats-num--mint num">${meta && meta.online != null ? meta.online : 1}</span><span class="mm-stats-label">${t('在线博士')}</span></div>
+          <div class="mm-stats-col"><span class="mm-stats-num num">${list.length}</span><span class="mm-stats-label">${t('同盟房间')}</span></div>
+          <div class="mm-stats-col"><span class="mm-stats-num num">${matches}</span><span class="mm-stats-label">${t('进行中对局')}</span></div>
+          <button type="button" class="mm-refresh-btn" onClick=${refresh} disabled=${refreshing}>
+            <${Icon} name="refresh" class=${refreshing ? 'is-spinning' : ''} /><span>${t('刷新')}</span>
+          </button>
+        </div>
+        <div class="mm-room-list">
+          ${list.length ? list.map((r) => {
+            const max = r.maxSeats || MAX_SEATS;
+            const full = r.humans >= max;
+            return html`<div key=${r.code} class="mm-room-card">
+              <div class="mm-room-code num">${r.code}</div>
+              <div class="mm-room-info">
+                <div class="mm-room-name">${isInfiniteMode(r.mode) ? t('超限模拟') : t('同盟模拟')} · ${t('同盟 #{code}', { code: r.code })}</div>
+                <div class="mm-room-meta">
+                  <span class="mm-room-diff" style=${`--d-color:${DIFFICULTY_COLORS[r.difficulty] || 'var(--mint)'}`}>
+                    <${DifficultyIcon} difficulty=${r.difficulty} class="diff-glyph" />
+                    <span>${DIFFICULTY_NAMES[r.difficulty] ? t(DIFFICULTY_NAMES[r.difficulty]) : r.difficulty}</span>
+                  </span>
+                  <span class="mm-room-players"><${Icon} name="users" /><span class="num">${r.humans} / ${max}</span></span>
+                  <span class=${`mm-room-status ${r.inMatch ? 'is-in-match' : 'is-waiting'}`}>${r.inMatch ? t('进行中') : t('等待中')}</span>
+                  ${r.inMatch && Number.isFinite(r.round) ? html`<span class="mm-room-round num">R${r.round}</span>` : null}
+                </div>
+              </div>
+              <div class="mm-room-actions">
+                ${r.inMatch
+                  ? html`<${Button} variant="secondary" size="md" icon="eye" class="mm-btn-spectate" disabled=${!online}
+                      onClick=${() => { onClose(); onSpectate(r.code); }}>${t('观战')}<//>`
+                  : html`<${Button} variant="primary" size="md" icon="users" class="mm-btn-join" disabled=${!online || full}
+                      onClick=${() => { onClose(); onJoin(r.code); }}>${full ? t('满员') : t('加入')}<//>
+                    <${Button} variant="secondary" size="md" icon="eye" class="mm-btn-spectate" disabled=${!online}
+                      onClick=${() => { onClose(); onSpectate(r.code); }}>${t('观战')}<//>`}
+              </div>
+            </div>`;
+          }) : html`<div class="mm-room-empty">
+            <${Icon} name="search" />
+            <span>${t('暂无公开同盟房间，可创建同盟或使用快速匹配')}</span>
+          </div>`}
+        </div>
+        <footer class="mm-modal__foot">
+          <div class="mm-foot-tag"><${MicroLabel}>AUTO-REFRESH 4S<//></div>
+          <div class="mm-foot-text">${t('列表每 4 秒自动刷新；观战不占博士席位，「进行中」的同盟只能观战。')}</div>
+        </footer>
+      </div>
+    </div>
+  </div>`;
 }
 
 export function difficultyInfo(roomMode, difficulty) {
@@ -871,21 +954,24 @@ export function LobbyScreen() {
   const [allyOpen, setAllyOpen] = useState(false);
   const [soloOpen, setSoloOpen] = useState(false);
   // [local-patch 2026-10-20] 战局一览数据源：直连 room.list（本 fork 的服务端消息），10s 轮询 + 在线数
+  // [local-patch 2026-10-27] 计数（在线/房间/对局）一并收下，供「战局一览」弹窗；refreshRooms 也给弹窗手动/定时刷新用
   const [rooms, setRooms] = useState([]);
-  const [roomsOnline, setRoomsOnline] = useState(true);
+  const [roomMeta, setRoomMeta] = useState(() => ({ online: 1, rooms: 0, matches: 0 }));
+  // [local-patch 2026-10-27] 战局一览弹窗（缺人卡「全部」→ 全部公开房间，含进行中，可观战）
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const refreshRooms = () => {
+    if (!CAN_LIST) return Promise.resolve();
+    return net.request('room.list').then((res) => {
+      if (!res || res.ok !== true) return;
+      if (Array.isArray(res.rooms)) setRooms(res.rooms);
+      setRoomMeta({ online: res.online ?? 1, rooms: res.roomsCount ?? 0, matches: res.matchesCount ?? 0 });
+    }).catch(() => {});
+  };
   useEffect(() => {
     if (!CAN_LIST) return undefined;
-    let cancelled = false;
-    const poll = () => {
-      if (document.hidden) return;
-      net.request('room.list').then((res) => {
-        if (cancelled || !res || res.ok !== true) return;
-        if (Array.isArray(res.rooms)) setRooms(res.rooms);
-      }).catch(() => {});
-    };
-    poll();
-    const iv = setInterval(poll, 10000);
-    return () => { cancelled = true; clearInterval(iv); };
+    refreshRooms();
+    const iv = setInterval(() => { if (!document.hidden) refreshRooms(); }, 10000);
+    return () => clearInterval(iv);
   }, []);
   const [code, setCode] = useState('');
   const [asTest, setAsTest] = useState(false);
@@ -1034,9 +1120,9 @@ export function LobbyScreen() {
         })}
       </section>
       ${/* [local-patch 2026-10-20] 缺人同盟卡（战局一览）：列表见 room.list，点「加入」直接进房 */''}
-      <${RecruitCard} rooms=${rooms} online=${roomsOnline}
+      <${RecruitCard} rooms=${rooms} online=${online}
         onJoin=${(c) => { setCode(String(c || '').toUpperCase()); join(String(c || '').toUpperCase()); }}
-        onAll=${() => setAllyOpen(true)} onCreate=${() => setAllyOpen(true)} />
+        onAll=${() => setBrowserOpen(true)} onCreate=${() => setAllyOpen(true)} />
     </main>
 
     ${allyOpen ? html`<${AllianceSelect} onClose=${() => setAllyOpen(false)} onCreate=${() => create('coop')} difficulty=${shownCoop} seatValue=${seatValue} seatMax=${seatMax} onSeat=${setSeatValue}
@@ -1047,6 +1133,9 @@ export function LobbyScreen() {
       onClose=${() => setSoloOpen(false)} onCreate=${() => create('solo')} busy=${busy} online=${online}
       testMode=${testMode} asTest=${asTest} onTest=${setAsTest} difficulties=${solo} loading=${versionLoading} failed=${versionFailed}
       soloTime=${soloTimed === true ? { on: soloFree, onToggle: setSoloFreePref } : null} selectedMods=${selectedMods} onToggleMod=${toggleMod} />` : null}
+    ${/* [local-patch 2026-10-27] 战局一览：全部公开房间（等待中可加入 / 进行中可观战） */''}
+    <${RoomBrowser} open=${browserOpen} rooms=${rooms} meta=${roomMeta} online=${online}
+      onClose=${() => setBrowserOpen(false)} onJoin=${join} onSpectate=${spectate} onRefresh=${refreshRooms} />
     ${sweepOpen ? html`<${SweepReport} onClose=${() => setSweepOpen(false)} />` : null}
     ${achOpen ? html`<${AchievementDialog} onClose=${() => setAchOpen(false)} />` : null}
   </div>`;

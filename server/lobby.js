@@ -1660,6 +1660,8 @@ export class Lobby {
         const seats = (r.seats ?? []).filter(s => s && !s.left);
         rooms.push({
           code: r.code,
+          // [local-patch 2026-10-27] 列表要区分 同盟/超限/单人：单人房既不能加入也不能观战，客户端据此过滤与标注
+          mode: r.mode,
           difficulty: r.difficulty,
           humans: seats.filter(s => !s.isBot).length,
           maxSeats: r.seatCap ?? seats.length,
