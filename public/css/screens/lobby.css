@@ -109,17 +109,7 @@
 /* the 无限火力 tag of a room card in the multiplayer modal (server room.view.random) */
 .mm-room-rm { padding: .02rem .08rem; border: 1px solid var(--mint-400); border: 1px solid color-mix(in srgb, var(--mint-400) 55%, transparent); background: var(--mint-400); background: color-mix(in srgb, var(--mint-400) 12%, transparent); color: var(--mint-400); font-size: calc(.14 * var(--t)); font-weight: 700; letter-spacing: .1em; border-radius: 2px; }
 
-.mode-card {
-  --bk-c: transparent;
-  --bk-l: .2rem;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: .22rem;
-  min-height: 2.72rem;
-  padding: .26rem .3rem .24rem 1.34rem;
-  overflow: hidden;
+/* ==========================================================================================
    screens/lobby.css — the hub (official entry backdrop, the emblem in its radar and the title, 成就统计 / 密钥加入 /
    作战提示 at the left, the light S.W.E.E.P.报告 / 干员调配 plates at the right, the 独立模拟 / 同盟模拟 entries at the
    bottom right), and the two full-screen dialogs (the project's Modal): 选择模拟协议 (official picture, difficulty cards
@@ -339,7 +329,6 @@
 }
 .mode-card:nth-child(2) { animation-delay: 60ms; }
 .mode-card:nth-child(3) { animation-delay: 120ms; }
-.mode-card__bg {
 .hub-center__mark { position: relative; display: grid; place-items: center; min-height: 1.4rem; margin-bottom: .1rem; }
 .hub-center__logo { position: relative; width: 1.3rem; height: auto; filter: drop-shadow(0 0 .12rem rgba(210, 255, 240, .25)); }
 .hub-center__mark .emblem { position: relative; margin-bottom: 0; }
