@@ -5,7 +5,7 @@
 // Installed on Match.prototype by server/match/Match.js (a method container: never instantiated; `this` is the match).
 
 import { C2S } from '../../../shared/protocol.js';
-import { PHASE, ERR, setBondLayerCap } from '../../../shared/constants.js';
+import { PHASE, ERR, releaseInfiniteBondLayerCap } from '../../../shared/constants.js';
 import { behaviourIsDefault } from '../../../shared/behaviour.js';
 import { syntheticResult } from '../fields.js';
 import { FLOW_TICKER_PRIORITY, OK, fail } from './common.js';
@@ -358,12 +358,16 @@ export class MatchPlatform {
       const sq = this.spSquadOf(ps);
       if (sq && !sq.done && sq.order[sq.idx] === ps.playerId) this._startSpSquadTurn(sq);
     }
+    // [local-patch 2026-10-27] 超限词条轮转同款：退出的正是当前抉择者时立刻让位（不必等超时回调兜底；
+    // untimed 单人局没有计时器，靠的是「无真人 → abandoned」而不是这里）。
+    else if (phase === PHASE.TRAIT_DRAFT && this.trait && this.traitTurn() === ps.playerId) this.startTraitTurn();
     else if (phase === PHASE.PREP) this.maybeEndPrep();
   }
 
   dispose() {
-    // [local-patch 2026-10-22] 超限局在构造时把盟约层数上限抬到 9999 —— 这里恢复成上一局的值（普通模式从不设置，为 null）。
-    if (this._bondCapPrev != null) { setBondLayerCap(this._bondCapPrev); this._bondCapPrev = null; }
+    // [local-patch 2026-10-22] 超限局在构造时把盟约层数上限抬到 9999 —— 构造/释放在这里配对。
+    // [local-patch 2026-10-27] set/restore 改为引用计数释放（并行超限局交叠时 restore 会互相冲掉/永久残留）。
+    if (this._bondCapHeld) { releaseInfiniteBondLayerCap(); this._bondCapHeld = false; }
     if (this.disposed) return;
     this.disposed = true;
     if (this.runner) { try { this.runner.stop(); } catch { /* ignore */ } }

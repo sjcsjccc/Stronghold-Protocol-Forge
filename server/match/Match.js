@@ -204,9 +204,9 @@
 //   common.js        what the modules share (FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS — re-exported here, OK,
 //                    fail, BOSS_CLOCK_MS)
 
-import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS, setBondLayerCap } from '../../shared/constants.js';
+import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS, holdInfiniteBondLayerCap, BOSS_HIT_LIMIT_INFINITE } from '../../shared/constants.js';
 import { MatchTraitDraft } from './match/traitDraft.js'; // [local-patch 2026-10-22] 超限模拟的「词条抉择」阶段
-import { isSoloRoomMode, isInfiniteMode, INFINITE_BOND_LAYER_CAP } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-22/23] 超限：solo_infinite + infinite(联机)
+import { isSoloRoomMode, isInfiniteMode } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-22/23] 超限：solo_infinite + infinite(联机)
 import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squad pool sharing width
 // 变体 / 口径层（DESIGN §28.39）：本局的轴表由各包的归一化声明合成，规则就是既有的「包 id 字典序小的赢」。
 import { mergeVariantDecls, variantValue } from '../../shared/variants.js';
@@ -402,9 +402,10 @@ export class Match {
     this.isInfinite = isInfiniteMode(opts.mode);
     // 超限的 R1–R15 用绝境的数值曲线（gamedata.baseEnemyScale）
     if (this.gd) this.gd.overlimit = this.isInfinite;
-    // 超限局把盟约层数上限抬到 9999（普通模式仍是 999）。恢复放在 platform dispose 里，
-    // 用「上一局的值」而不是常量，避免嵌套/并发时把别的对局的设置冲掉。
-    this._bondCapPrev = this.isInfinite ? setBondLayerCap(INFINITE_BOND_LAYER_CAP) : null;
+    // 超限局把盟约层数上限抬到 9999（普通模式仍是 999）。恢复放在 platform dispose 里。
+    // [local-patch 2026-10-27] set/restore 改为 hold/release 引用计数：并行对局交叠时 save/restore
+    // 会把别的超限局冲回 999、或把进程永久留在 9999（详见 shared/constants.js 的说明）。
+    this._bondCapHeld = this.isInfinite ? (holdInfiniteBondLayerCap(), true) : false;
     /** 「AI 队友最后选择」 (opts.aiPicksLast, GitHub #338): humans draft before AI seats (MatchPhases.humansFirst) */
     this.aiPicksLast = !this.isSolo && opts.aiPicksLast === true;
     /**
@@ -413,9 +414,13 @@ export class Match {
      * battles are built with no `bossHitLimit` key at all (byte-for-byte the old behaviour). A number (or Infinity for
      * "off") is passed to every field this match builds, server-run and client-side alike (the client reads it off the
      * battle spec, so both sides cancel the same hits).
+     * [local-patch 2026-10-27] 超限局默认放宽到 `BOSS_HIT_LIMIT_INFINITE`（9.9e9）——该常量此前定义了却从未
+     * 接线，R16+ 我方单发普遍超官方 30 万上限的领袖打击按官方规则被**整发作废**（damage.js leaderHitCancelled
+     * 是取消不是封顶），后期越打越没伤害。opts / SP_BOSS_HIT_LIMIT 显式给出时仍然尊重部署方的选择。
      * @type {number|undefined}
      */
     this.bossHitLimit = opts.bossHitLimit !== undefined ? opts.bossHitLimit : bossHitLimitFrom(typeof process !== 'undefined' && process.env ? process.env : {});
+    if (this.bossHitLimit === undefined && this.isInfinite) this.bossHitLimit = BOSS_HIT_LIMIT_INFINITE;
     this.ownsScheduler = !opts.scheduler;
     this.sched = opts.scheduler || new RealScheduler({ now: opts.now || Date.now, onError: (e) => this.reportError('timer', e) });
     this.registry = opts.registry || getDefaultRegistry();

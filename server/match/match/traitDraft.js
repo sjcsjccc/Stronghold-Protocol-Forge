@@ -88,7 +88,9 @@ export class MatchTraitDraft {
       this.setDeadline(secs, () => {
         if (this.phase !== PHASE.TRAIT_DRAFT || token !== this._traitTurnToken || !this.trait) return;
         const cur = this.players.get(this.traitTurn());
-        if (!cur) return;
+        // [local-patch 2026-10-27] 轮到的抉择者已退出/被淘汰时必须推进轮转（startTraitTurn 会跳过 dead 并在
+        // 耗尽时收尾）——此前原地返回会让整个联机超限局死在词条界面（_quit 也没有 TRAIT_DRAFT 分支兜底）。
+        if (!cur || !cur.alive) { this.startTraitTurn(); return; }
         this.pickTrait(cur, this.rngMeta.pick([...this.trait.cards.keys()]));
       });
       t.turnDeadline = this.deadline;

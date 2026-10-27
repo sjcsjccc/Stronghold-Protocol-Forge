@@ -418,7 +418,14 @@ function wireNet() {
     if (!isMine) getRoomDanmaku().show({ ...msg, playerId: msg.from ?? msg.playerId }, false);
   });
   net.on('chat.history', (msg) => {
-    if (Array.isArray(msg?.messages)) for (const m of msg.messages) pushChatMessage(m);
+    if (!Array.isArray(msg?.messages)) return;
+    // [local-patch 2026-10-27] 重连（页面不刷新、房间不变）时整段历史回放会把已显示的行再追加一遍——
+    // 按 from|at|text 去重后再入日志（clearChat 只在换房/关房时调，救不了重连）。
+    const seen = new Set((store.get().chatMessages || []).map((x) => `${x.from}|${x.at}|${x.text}`));
+    for (const m of msg.messages) {
+      const k = `${m.from}|${m.at}|${m.text}`;
+      if (!seen.has(k)) { seen.add(k); pushChatMessage(m); }
+    }
   });
   net.on('room.closed', (msg) => {
     backToLobby();

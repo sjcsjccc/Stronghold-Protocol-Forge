@@ -172,7 +172,13 @@ export function ChatBox({ active: controlledActive, onToggle, showTrigger = cont
             placeholder=${t('输入对话 (Enter发送, Esc取消)...')}
             value=${draft}
             onInput=${(e) => setDraft(e.target.value)}
-            onKeyDown=${(e) => e.stopPropagation()}
+            onKeyDown=${(e) => {
+              // 阻断冒泡到 window（游戏热键）依然是目的，但 Esc 要就地处理——事件停在 input 上后
+              // window 层的「Esc 关闭输入框」永远收不到，占位符承诺的 Esc 取消就成了空头支票。
+              // [local-patch 2026-10-27]
+              e.stopPropagation();
+              if (e.key === 'Escape') { setActive(false); inputRef.current?.blur(); }
+            }}
             onBlur=${() => { setTimeout(() => { if (!draft) setActive(false); }, 180); }}
           />
           <button

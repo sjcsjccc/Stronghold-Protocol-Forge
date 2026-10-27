@@ -29,7 +29,7 @@
 //            with one to three different cards
 //   match    phase known; teamLp / boss pool within range; combat fields match the alive players
 
-import { PHASE, BOND_LAYER_CAP } from '../../shared/constants.js';
+import { PHASE, currentBondLayerCap } from '../../shared/constants.js';
 import { morphSlotPolicy, ruleOption } from '../../shared/plugins/rules.js';
 import { FIELD, canPlace, placeClass, positionClass, parseKey } from './board.js';
 import { computeBonds } from './bondsMeta.js';
@@ -87,8 +87,11 @@ export function collectViolations(m, { limit = 25 } = {}) {
     if (!(ps.shop.upgradePrice >= 0)) fail(`${id}: upgradePrice ${ps.shop.upgradePrice}`);
     if (!Number.isInteger(ps.shop.freeRefreshes) || ps.shop.freeRefreshes < 0) fail(`${id}: freeRefreshes ${ps.shop.freeRefreshes}`);
     // the official per-bond layer cap (shared/constants.js): no writer may pass it
+    // [local-patch 2026-10-27] 读实时上限（超限局 9999）——静态 999 会把超限局 1000-9999 层记成假违规
+    // （而 >9999 的真违规反而查不出）。
     for (const [b, v] of Object.entries(ps.layers || {})) {
-      if (!(Number.isFinite(v) && v >= 0 && (!(BOND_LAYER_CAP > 0) || v <= BOND_LAYER_CAP))) fail(`${id}: ${b} layers ${v}`);
+      const cap = currentBondLayerCap();
+      if (!(Number.isFinite(v) && v >= 0 && (!(cap > 0) || v <= cap))) fail(`${id}: ${b} layers ${v}`);
     }
 
     if (!ps.alive) {

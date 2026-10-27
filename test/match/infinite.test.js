@@ -5,9 +5,10 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { makeMatch } from './harness.js';
-import { PHASE, layerGainRoom, setBondLayerCap } from '../../shared/constants.js';
+import { PHASE, layerGainRoom, setBondLayerCap, BOSS_HIT_LIMIT_INFINITE } from '../../shared/constants.js';
 import { isInfiniteBossRound } from '../../server/match/infiniteWaves.js';
 import { enemyInfiniteScale } from '../../shared/infiniteMode.js';
+import { bossPoolHp } from '../../server/match/finalAssault.js';
 
 /** Drive the match like h.drive, answering the trait draft as well (idx 0). */
 function drive(h, pred) {
@@ -42,6 +43,9 @@ describe('超限模拟 (solo_infinite)', () => {
     assert.equal(m.isInfinite, true);
     assert.equal(m.mode, 'solo', 'solo_infinite plays on the solo seat shape');
     assert.equal(m.gd.overlimit, true, 'R1–R15 uses the ABYSS curve');
+    // [local-patch 2026-10-27] 限伤放宽接线：超限局默认 BOSS_HIT_LIMIT_INFINITE（此前常量定义了却从未接线，
+    // R16+ 单发普遍超官方 30 万的领袖打击被整发作废）
+    assert.equal(m.bossHitLimit, BOSS_HIT_LIMIT_INFINITE, 'the overlimit match lifts the boss-hit limit');
     const pub = m.publicView();
     assert.equal(pub.isInfinite, true);
     // [local-patch 2026-10-22] 加速与另两个模式统一：房主倍速 g.matchSpeed（×1–4）在超限局照常生效
@@ -101,6 +105,7 @@ describe('超限模拟 (solo_infinite)', () => {
     h.autoHumans();
     assert.equal(m.isInfinite, false);
     assert.equal(m.publicView().isInfinite, false);
+    assert.equal(m.bossHitLimit, undefined, 'a normal match keeps the official hit limit (no override key)');
     drive(h, () => h.ended != null);
     assert.ok(h.ended, 'a normal solo match still ends');
     assert.notEqual(m.phase, PHASE.TRAIT_DRAFT, 'no trait draft in the normal mode');
@@ -185,4 +190,61 @@ describe('超限模拟·联机 (infinite)', () => {
     }
     m.dispose();
   });
+});
+
+// [local-patch 2026-10-27] 超限数值接线：Boss 血量逐回合成长（bossPoolHp 第 4 参）。
+// 修复前：bossRounds 一直在传 round，但 bossPoolHp 是三参签名，参数被静默吞掉——超限 Boss 血池
+// 只在档位间抬升，档位用完后永远平坦（getInfiniteBossHp 定义了却从未被调用）。
+test('Boss 血量成长接线：bossPoolHp 第 4 参（超限 Boss 轮）按回合复利，普通模式不动', () => {
+  const gd = { difficulty: 'HARD', boss: () => ({ bloodPoint: { HARD: 1000 } }), bossPoolShare: () => 1 };
+  assert.equal(bossPoolHp(gd, 'someBoss', 2), 1000, 'no round = the official path byte-for-byte');
+  assert.equal(bossPoolHp(gd, 'someBoss', 2, 15), 1000, 'R15 and earlier: unchanged');
+  assert.equal(bossPoolHp(gd, 'someBoss', 2, 20), Math.round(1000 * 1.06 ** 5), 'R20 grows with the round');
+  assert.ok(bossPoolHp(gd, 'someBoss', 2, 30) > bossPoolHp(gd, 'someBoss', 2, 20), 'keeps climbing');
+});
+
+// [local-patch 2026-10-27] 词条轮转死锁修复（真路径）：轮到抉择的玩家中途退出（g.leave / 掉线宽限到期 /
+// 对局中被踢——都走 _quit）时，轮转立即让位。修复前 _quit 只重挂 BAND_DRAFT / SP_DRAFT / PREP 三个相位，
+// TRAIT_DRAFT 停在已退出者身上，整局死在词条界面。
+test('词条轮转死锁修复：轮到的人中途退出（_quit）立即让位，另一玩家照常选完', () => {
+  const h = makeMatch({
+    mode: 'infinite', difficulty: 'HARD', humans: 2, seed: 78, fake: true, hostId: 'p_0',
+    script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 20000 } : { duration: 1, leaks: {} }),
+  }).start();
+  const m = h.m;
+  h.autoHumans();
+  const ids = [...m.players.keys()];
+  drive(h, () => m.phase === PHASE.TRAIT_DRAFT || h.ended != null);
+  assert.equal(m.phase, PHASE.TRAIT_DRAFT);
+  const cur = m.traitTurn();
+  const other = ids.find((x) => x !== cur);
+  m._quit(m.players.get(cur)); // 中途退出的内部路径（leave/disconnect/kick 殊途同归）
+  assert.equal(m.phase, PHASE.TRAIT_DRAFT, 'another human is still in: the match continues');
+  assert.equal(m.traitTurn(), other, 'the turn yields at once instead of stalling on the departed picker');
+  assert.deepEqual(m.handle(other, { t: 'g.traitChoice', idx: 0 }), { ok: true });
+  assert.equal(m.trait, null, 'the draft closes after the last standing picker');
+  drive(h, () => m.round >= 21 && (m.phase === 'PREP' || m.phase === 'ROUND_START'));
+  assert.equal(m.round, 21, 'the run continues into the next round');
+  m.dispose();
+});
+
+// [local-patch 2026-10-27] 词条轮转死锁修复（兜底路径）：当前抉择者失格但没有任何东西重挂轮转时
+// （修复前的 deadline 回调对已淘汰者 pickTrait 返回 ELIMINATED 后原地返回），超时也要跳过并收尾。
+test('词条轮转死锁修复（超时兜底）：当前抉择者失格后超时跳过，阶段照常推进', () => {
+  const h = makeMatch({
+    mode: 'infinite', difficulty: 'HARD', humans: 2, seed: 79, fake: true, hostId: 'p_0',
+    script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 20000 } : { duration: 1, leaks: {} }),
+  }).start();
+  const m = h.m;
+  h.autoHumans();
+  drive(h, () => m.phase === PHASE.TRAIT_DRAFT || h.ended != null);
+  assert.equal(m.phase, PHASE.TRAIT_DRAFT);
+  const cur = m.traitTurn();
+  const curPs = m.players.get(cur);
+  // 不走 _quit（模拟任何不重挂轮转的淘汰路径），直接失格；真人还在 players 里所以对局不结束
+  curPs.eliminate(m.round);
+  // 跑过两段轮转时钟（首 30s + 后 16s 级别，给足余量）：修复前停在死掉的抉择者上永远不动
+  h.sched.advance(180000);
+  assert.notEqual(m.phase, PHASE.TRAIT_DRAFT, 'the deadline skips the dead picker and the draft completes');
+  m.dispose();
 });

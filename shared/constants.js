@@ -1,6 +1,7 @@
 // Shared enums & constants (server + browser). Pure ESM, no Node APIs.
 
 import { N_ } from './i18n.js';
+import { INFINITE_BOND_LAYER_CAP } from './infiniteMode.js'; // [local-patch 2026-10-27] hold/release 引用计数要用（本文件尾部的 re-export 不进模块作用域）
 
 /**
  * The **wire format** number, and the stale-page gate. A `hello` declares it (`public/js/net.js _sendHello`), the server
@@ -312,11 +313,17 @@ export const BOND_LAYER_CAP = 999;
 
 /**
  * 实际生效的层数上限 [local-patch 2026-10-22，上游 0.3.1.1 同款]：超限模拟里盟约层数能叠到 9999。
- * `BOND_LAYER_CAP` 是原版（以及所有普通模式）的 999；超限局在 Match 构造时把这里抬到 9999，
- * dispose 时恢复 —— 改动**只在一个超限局的生命周期内**，普通单机 / 同盟读到的仍是 999。
+ * `BOND_LAYER_CAP` 是原版（以及所有普通模式）的 999；超限局在 Match 构造时持有它，dispose 时释放。
  * 用它而不是直接改常量，是因为 `layerGainRoom` 是纯函数、被 service 与 sim 两侧共用。
+ * [local-patch 2026-10-27] 从「setBondLayerCap 存/取上一局的值」改为**引用计数**：save/restore 假设
+ * LIFO 嵌套，而大厅进程里多个对局并行——A、B 两个超限局交叠时 A 的 dispose 会把 B 正在用的 9999
+ * 冲回 999，B 的 dispose 再把进程永久留在 9999（殃及之后所有普通局）。所有超限局要的值相同，
+ * 计数 >0 即 9999、归零即 999，天然免交叠错乱。setBondLayerCap 保留给测试/工具直用。
+ * 已知残留（上游同款、暂不修）：客户端 sim 是浏览器里自己的 constants 实例（恒 999），盟约 >999 层
+ * 的战斗内增长只在服务端代跑场按 9999 结算。
  */
 let bondLayerCapLive = BOND_LAYER_CAP;
+let bondLayerCapHolders = 0;
 
 /** The cap `layerGainRoom` enforces right now (999 normally, 9999 inside an overlimit match). */
 export function currentBondLayerCap() { return bondLayerCapLive; }
@@ -326,6 +333,14 @@ export function setBondLayerCap(v) {
   const prev = bondLayerCapLive;
   bondLayerCapLive = Number.isFinite(v) && v > 0 ? Math.floor(v) : BOND_LAYER_CAP;
   return prev;
+}
+
+/** [local-patch 2026-10-27] 超限局持有 9999 上限（可重入：并发超限局各持一份，归零才回 999）。 */
+export function holdInfiniteBondLayerCap() { if (++bondLayerCapHolders === 1) bondLayerCapLive = INFINITE_BOND_LAYER_CAP; }
+
+/** [local-patch 2026-10-27] 释放一次持有；与 hold 配对（Match 构造 / dispose）。多释放安全（钳在 0）。 */
+export function releaseInfiniteBondLayerCap() {
+  if (bondLayerCapHolders > 0 && --bondLayerCapHolders === 0) bondLayerCapLive = BOND_LAYER_CAP;
 }
 
 /**

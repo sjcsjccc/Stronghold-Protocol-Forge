@@ -37,6 +37,7 @@
 
 import { BOSS_POOL_MIN_HP } from '../sim/constants.js';
 import { GEO } from '../../shared/constants.js';
+import { getInfiniteBossHp } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-27] 超限 Boss 血量逐回合成长
 import { OFFICIAL_LAYOUT, stageRowOfBoard, stageColOfBoard } from '../../shared/layout.js';
 import { mirrorDir, normDir } from '../sim/dir.js';
 import { bossPoolShareOf } from './gamedata.js';
@@ -82,13 +83,19 @@ export function pairPlayers(alive, rng, previous = null) {
   return groups;
 }
 
-/** Shared boss HP for a boss id with `aliveCount` alive players (GameData.bossPoolShare / bossPoolShareOf; omitted ⇒ a full team). */
-export function bossPoolHp(gd, bossId, aliveCount) {
+/**
+ * Shared boss HP for a boss id with `aliveCount` alive players (GameData.bossPoolShare / bossPoolShareOf; omitted ⇒ a full team).
+ * [local-patch 2026-10-27] 第 4 参 `round`：超限局的 Boss 轮传当前回合，base 按回合复利成长
+ * （getInfiniteBossHp，×1.06/回合，≤15 原值不变）——bossRounds 一直在传这个参数，此前被三参签名静默
+ * 吞掉，超限 Boss 血池只在档位间抬升、档位用完后永远平坦（相对难度递减）。普通模式不传，逐字节原路径。
+ */
+export function bossPoolHp(gd, bossId, aliveCount, round) {
   const boss = gd.boss(bossId);
   const diff = gd.difficulty;
   let base = boss && boss.bloodPoint && Number.isFinite(boss.bloodPoint[diff]) ? boss.bloodPoint[diff] : null;
   if (base == null && boss && boss.bloodPoint) base = Object.values(boss.bloodPoint).find((v) => Number.isFinite(v)) ?? null;
   if (base == null) base = 500000;
+  if (Number.isFinite(round) && round > 15) base = getInfiniteBossHp(base, round); // 超限：血量逐回合成长
   const tune = typeof gd.bossHpMul === 'function' ? gd.bossHpMul(bossId) : 1;
   const share = typeof gd.bossPoolShare === 'function' ? gd.bossPoolShare(aliveCount)
     : bossPoolShareOf(gd.mode && gd.mode.bossHpScale, gd.config && gd.config.bossHpScale, !!gd.isSolo, aliveCount, gd.seatCap);

@@ -1377,7 +1377,11 @@ export class Lobby {  /**
     //
     // **只作用于 co-op**：solo 房今天也是按 `this.opts.maxSeats` 建座位数组的（客户端 `normalizeSeats` 按
     // `mode:'solo'` 只画一张卡），改掉它就会移动每一个 solo 帧 —— 所以 solo 一律忽略这个字段。
-    const roomCap = mode === 'coop' && seatCap != null ? clampSeats(seatCap, this.opts.maxSeats) : this.opts.maxSeats;
+    let roomCap = mode === 'coop' && seatCap != null ? clampSeats(seatCap, this.opts.maxSeats) : this.opts.maxSeats;
+    // [local-patch 2026-10-27] 超限联机房（`infinite`）的座位闸补漏：词条抉择轮转没有 >4 的小队变体，
+    // 补丁⑭只在房内 setSeatCap 处挡了改大，建房路径此前直通 20 座（`SP_MAX_SEATS` 缺省即 20），
+    // 5-20 真人同房会落进变体路径。这里把建房也钳到 MAX_SEATS（4）；solo_infinite 本就单人不走 join。
+    if (mode === 'infinite') roomCap = Math.min(roomCap, MAX_SEATS);
     const room = new Room(code, mode, difficulty, this.now(), roomCap);
     room.test = test === true;
     room.content = this.vanilla;

@@ -202,9 +202,11 @@ export class MatchSpDraft {
       sq._timer = this.later(ms, () => {
         if (this.phase !== PHASE.SP_DRAFT || !Array.isArray(this.spSquads) || token !== sq._token) return;
         const ps = this.players.get(sq.order[sq.idx]);
-        if (!ps) return;
         const avail = sq.cards.filter((c) => this._spAvail(sq, c)).map((c) => c.idx);
-        if (!avail.length) { this._maybeFinishSpSquads(); return; }
+        // [local-patch 2026-10-27] 抉择者已不在（防御）或本队可选卡被抽空（item 卡走全房共享池，别队可抽干它）
+        // 时必须重入轮转入口——入口会置 sq.done 并收尾；此前这里只调 _maybeFinishSpSquads() 不置 done，
+        // 该小队永不完成，其余小队打完后整个 SP_DRAFT 阶段死锁。
+        if (!ps || !avail.length) { this._startSpSquadTurn(sq); return; }
         this._applySpPick(ps, sq, avail[Math.floor(this.rngDraft() * avail.length)]);
       });
     } else {
@@ -228,7 +230,8 @@ export class MatchSpDraft {
       const ps = this.players.get(sq.order[sq.idx]);
       if (!ps || !ps.botControlled) return;
       const avail = sq.cards.filter((c) => this._spAvail(sq, c)).map((c) => c.idx);
-      if (!avail.length) return;
+      // [local-patch 2026-10-27] 卡被抽空时同上重入轮转入口（untimed 小队没有兜底计时器，这里 return 会永久停摆）
+      if (!avail.length) { this._startSpSquadTurn(sq); return; }
       this._applySpPick(ps, sq, botPickCard(this, ps, sq.cards, avail));
     });
   }
@@ -244,6 +247,14 @@ export class MatchSpDraft {
     this.markPublic();
     onPickCard(this, ps, card); // AI bots say "思考" when they take a bounty (enabled by default; SP_BOT_EMOTES=0 silences it)
     this._startSpSquadTurn(sq);
+    // [local-patch 2026-10-27] 跨队抽空兜底：item 卡走全房共享池，这一手可能把别的小队手里的卡全部抽干——
+    // 被抽干的小队没有任何回调会重估自己（untimed 小队没有计时器、正等真人抉择的小队没有 bot 回调），
+    // 原地等下去就是阶段死锁。每次落卡后扫一遍：没 done 且已无可选卡的小队，就地重入轮转入口收尾。
+    if (Array.isArray(this.spSquads)) {
+      for (const other of this.spSquads) {
+        if (other !== sq && !other.done && !other.cards.some((c) => this._spAvail(other, c))) this._startSpSquadTurn(other);
+      }
+    }
   }
 
   /**
