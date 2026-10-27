@@ -200,9 +200,6 @@
    height is capped, at the tallest a 4-seat room ever needs. */
 .seats--dense.seats--compact { max-height: calc(4 * 6rem + 3 * .3rem + .54rem); }
 
-.seat {
-  --bk-c: var(--line-3);
-  --bk-l: .18rem;
 .rseat {
   --w: min(18vw, 3.4rem, calc((100vw - 1.6rem) / var(--n, 4) - .3rem));
   position: relative;
@@ -405,6 +402,11 @@
   margin-top: .06rem;
   padding-top: .1rem;
   border-top: 1px solid var(--line);
+  min-height: max(.76rem, 32px, calc(46px * var(--sp-ui, 1)));
+  margin-top: .08rem;
+  padding: .06rem .1rem;
+  background: linear-gradient(90deg, #232626, #161818);
+  border: 1px solid rgba(255, 255, 255, .1);
 }
 .seat__foot .tt-anchor { position: absolute; right: .14rem; bottom: .14rem; }
 .seat__state { display: flex; align-items: center; gap: .06rem; font-size: calc(.18 * var(--t)); font-weight: 700; letter-spacing: .06em; }
@@ -430,12 +432,6 @@
     linear-gradient(rgba(159, 212, 255, .04) 1px, transparent 1px) 0 0 / .3rem .3rem,
     linear-gradient(90deg, rgba(159, 212, 255, .04) 1px, transparent 1px) 0 0 / .3rem .3rem,
     #0b0e10; }
-  min-height: max(.76rem, 32px, calc(46px * var(--sp-ui, 1)));
-  margin-top: .08rem;
-  padding: .06rem .1rem;
-  background: linear-gradient(90deg, #232626, #161818);
-  border: 1px solid rgba(255, 255, 255, .1);
-}
 .rseat.is-lit .rseat__plate { border-color: rgba(79, 232, 192, .55); }
 .rseat.is-me .rseat__plate { background: linear-gradient(90deg, #26302d, #161a19); }
 .rseat__plate .avatar { grid-row: 1 / 3; }
