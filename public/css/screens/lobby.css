@@ -1526,7 +1526,6 @@
 .hub-plate--sweep:hover, .hub-plate--loadout:not(:disabled):hover { filter: brightness(1.05); }
 .hub-plate--sweep:focus-visible { outline: 2px solid var(--mint-400); outline-offset: 2px; }
 
-.hub-entries { grid-column: 2 / -1; grid-row: 2; display: flex; flex-direction: column; align-items: flex-end; gap: .12rem; }
 .hub-searching, .hub-maint { width: min(100%, 8.6rem); }
 .hub-maint { padding: .08rem .16rem; border: 1px solid var(--amber); color: var(--amber); background: rgba(40, 24, 6, .7); font-size: calc(.15 * var(--t)); }
 .hub-entries__row { display: flex; align-items: flex-end; gap: var(--hub-gap); }
