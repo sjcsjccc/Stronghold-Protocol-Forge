@@ -104,7 +104,9 @@ export class MatchUnite {
       return { fieldId, kind: 'unite', players: p.helpers.map((x) => x.playerId), battle: this.newBattle(this._uniteOpts(p, limit, fieldId)), live: true };
     });
     this.deadline = this.sched.instant ? 0 : this.sched.now() + Math.round((limit / this.gameSpeed) * 1000);
-    this._defaultWatch();
+    // [local-patch 2026-10-27] 变体局默认观看按小队选场（_uniteDefaultFieldOf）：两个小队都出计划时，
+    // 没上场的队员从前全被推到 fields[0]（另一队的战场）。单计划路径（上行）不变。
+    this._defaultWatch((ps, fields) => this._uniteDefaultFieldOf(ps, fields));
     this.markPublic();
     this.tickerText(msg('联防阶段：{names} 迎战突破防线的敌人', { names: list.flatMap((p) => p.helpers.map((h) => h.name)) }), FLOW_TICKER_PRIORITY);
     onStartUnite(this, this.unitePlan);
@@ -334,10 +336,14 @@ export class MatchUnite {
   }
 
   /**
-   * The variant's client-run 联防: one field per squad, each viewer watching its own squad's field (a helper) or the
-   * first field it does not fight on (an observer, spectator seats included). `this.fields` is cleared before the
-   * launch: clientCombat ends a phase as soon as every field is done, so a stale done field would let the round-end
-   * hook fire a second time — which re-carved the relay plans and mixed the squads' charges.
+   * The variant's client-run 联防: one field per squad. Every viewer simulates every field locally (a b.start per
+   * field, `watch: !mine`), and the DISPLAYED one is whichever b.start arrived LAST (public/js/battle/runner.js shows
+   * the newest field) — so the field the viewer is to watch (`_uniteDefaultFieldOf`: its own fight, else its own
+   * squad's) is sent AFTER the background replicas. [local-patch 2026-10-27] Before this, every viewer's last b.start
+   * was the LAST squad's field: with two squads both fielding, one whole squad (helpers included) opened the 联防
+   * watching the OTHER team's battlefield. `this.fields` is cleared before the launch: clientCombat ends a phase as
+   * soon as every field is done, so a stale done field would let the round-end hook fire a second time — which
+   * re-carved the relay plans and mixed the squads' charges.
    */
   _startUniteVariantClient(list) {
     this.phase = PHASE.UNITE;
@@ -351,12 +357,14 @@ export class MatchUnite {
     this.fields = [];
     this._launch(fields);
     const viewers = [...this._viewers()];
-    for (const f of fields) {
-      for (const ps of viewers) {
-        const mine = f.players.includes(ps.playerId);
-        if (mine || !this.watchers.has(ps.playerId)) this.watchers.set(ps.playerId, f.fieldId);
-        this._sendStart(ps.playerId, f, { watch: !mine });
+    for (const ps of viewers) {
+      const disp = this._uniteDefaultFieldOf(ps, fields);
+      for (const f of fields) {
+        if (f !== disp) this._sendStart(ps.playerId, f, { watch: !f.players.includes(ps.playerId) });
       }
+      if (!disp) continue;
+      this.watchers.set(ps.playerId, disp.fieldId);
+      this._sendStart(ps.playerId, disp, { watch: !disp.players.includes(ps.playerId) });
     }
     this.markPublic();
     this.tickerText(msg('联防阶段：{names} 迎战突破防线的敌人', { names: list.flatMap((p) => p.helpers.map((h) => h.name)) }), FLOW_TICKER_PRIORITY);
@@ -411,6 +419,32 @@ export class MatchUnite {
       if (f) return f;
     }
     return this.fields.find((x) => x && x.kind === 'unite') || null;
+  }
+
+  /**
+   * The 联防 field a viewer is shown by DEFAULT in the variant — the server-run `_defaultWatch` pick and the client-run
+   * b.start ordering both come here. The field it fights on; else [local-patch 2026-10-27] an alive member's OWN
+   * SQUAD's field (a leaker or a resting member: with two squads both fielding, every non-helper used to land on the
+   * first field — another squad's battlefield, "第一轮协防看的另一队的"); else an eliminated human / spectator seat
+   * keeps following the player it watches (item 56), else the first field.
+   * @param {any} ps a `_viewers()` entry @param {Array<any>} fields the phase's fields
+   */
+  _uniteDefaultFieldOf(ps, fields) {
+    if (!Array.isArray(fields) || !fields.length) return null;
+    const own = fields.find((f) => Array.isArray(f.players) && f.players.includes(ps.playerId));
+    if (own) return own;
+    if (this._follows(ps)) return this._watchTargetField(ps, fields) || this._uniteSquadField(ps, fields) || fields[0];
+    return this._uniteSquadField(ps, fields) || this._watchTargetField(ps, fields) || fields[0];
+  }
+
+  /** The variant 联防 field of `ps`'s own squad (the squad its helpers' seats belong to), null without one. */
+  _uniteSquadField(ps, fields) {
+    const k = squadIndexOf(ps && ps.seat);
+    if (k < 0 || !Array.isArray(fields)) return null;
+    return fields.find((f) => Array.isArray(f.players) && f.players.some((pid) => {
+      const q = this.players.get(pid);
+      return !!q && squadIndexOf(q.seat) === k;
+    })) || null;
   }
 
   /**

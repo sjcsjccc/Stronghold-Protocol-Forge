@@ -442,10 +442,46 @@ test('C gate ON: two squads that leak run two battlefields; each field holds onl
   assert.notEqual(m._uniteFieldFor(m.unitePlans[0]), m._uniteFieldFor(m.unitePlans[1]));
   assert.equal(m._unitePlanFor(h.ps('p_1')), null, 'a helper is not a leaker of any squad plan');
   assert.equal(m._uniteLeft(h.ps('p_1')), null, 'and _uniteLeft answers null for it, not another squad number');
+  // [local-patch 2026-10-27] the default watch is squad-aware: a non-helper viewer opens on its OWN squad's field
+  // (helpers keep the field they fight on) — with both squads fielding, it used to be fields[0] for everyone else
+  assert.equal(m.watchers.get('p_1'), 'u0', 'a squad-0 helper watches its own field');
+  assert.equal(m.watchers.get('p_5'), 'u1', 'a squad-1 helper watches its own field');
+  assert.equal(m.watchers.get('p_0'), 'u0', 'the squad-0 leaker opens on the squad-0 field');
+  assert.equal(m.watchers.get('p_4'), 'u1', 'the squad-1 leaker opens on the squad-1 field');
+  assert.equal(m.watchers.get('p_7'), 'u1', 'a resting squad-1 member opens on the squad-1 field');
   h.drive(() => m.phase === PHASE.SETTLE);
   assert.equal(m.phase, PHASE.SETTLE);
   assert.ok(m.uniteResultView, 'the settlement carries the 联防 outcome');
   assert.deepEqual(collectViolations(m), []);
+  m.dispose();
+});
+
+// [local-patch 2026-10-27] The client-run variant 联防: the browser shows the field of the LAST b.start it received
+// (public/js/battle/runner.js), so the field a viewer is to watch must be the last one sent to it — its own fight,
+// else its own squad's. Before the fix every viewer's last b.start was the LAST squad's field, so with two squads
+// fielding, one whole squad (helpers included) opened the 联防 watching the OTHER team's battlefield.
+test('C gate ON: the client-run variant 联防 opens every viewer on its OWN squad\'s field', () => {
+  const h = makeMatch({
+    mode: 'coop', humans: 8, seed: 9107, fake: true, clientCombat: true,
+    script: (b) => (b.kind === 'normal' ? { leaks: (b.players[0] === 'p_0' || b.players[0] === 'p_4') ? { [b.players[0]]: 2 } : {} } : {}),
+  }).start();
+  const m = h.m;
+  h.toPrep(1);
+  const ranged = chessOfTier(1, (c) => c.position === 'RANGED').filter((x) => m.pool.has(x));
+  ['p_1', 'p_2', 'p_5', 'p_6'].forEach((pid, i) => {
+    const ps = h.ps(pid);
+    giveOwn(m, ps, ranged[i % ranged.length], legalTileFor(m, ps, ranged[i % ranged.length]));
+  });
+  h.drive(() => m.phase === PHASE.UNITE);
+  assert.equal(m.phase, PHASE.UNITE);
+  assert.deepEqual(m.fields.map((f) => f.fieldId), ['u0', 'u1'], 'both squads fielded');
+  // every viewer receives every field's b.start (a local replica of each); the DISPLAYED one is the last received
+  for (const pid of ['p_0', 'p_1', 'p_3']) assert.equal(h.lastTo(pid, 'b.start').fieldId, 'u0', `${pid} opens on squad 0's field`);
+  for (const pid of ['p_4', 'p_6', 'p_7']) assert.equal(h.lastTo(pid, 'b.start').fieldId, 'u1', `${pid} opens on squad 1's field`);
+  // the authority of a field still receives its own field's authoritative b.start (it must run and report it)
+  assert.equal(h.lastTo('p_1', 'b.start').authoritative, true, 'the squad-0 helper keeps the authoritative start');
+  assert.equal(m.watchers.get('p_0'), 'u0');
+  assert.equal(m.watchers.get('p_4'), 'u1');
   m.dispose();
 });
 

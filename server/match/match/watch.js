@@ -162,6 +162,11 @@ export class MatchWatch {
     if (!this.fields.some((f) => f.cc)) { this._followScout(ps, { keep: true }); return; }
     const fid = this.watchers.get(ps.playerId);
     let f = fid ? this.fields.find((x) => x.fieldId === fid) : null;
+    // the variant 联防's fallback is squad-aware (MatchUnite._uniteDefaultFieldOf): a reconnecting non-helper used to
+    // land on fields[0], another squad's battlefield when both squads fielded
+    if (!f && this.phase === PHASE.UNITE && Array.isArray(this.unitePlans) && this.unitePlans.length) {
+      f = this._uniteDefaultFieldOf(ps, this.fields);
+    }
     if (!f) f = this.fields.find((x) => x.players.includes(ps.playerId)) || (this.phase === PHASE.UNITE ? this.fields[0] : null);
     if (!f && !ps.alive) f = this._watchTargetField(ps, this.fields) || this.fields[0] || null;
     if (!f) return;
@@ -169,12 +174,18 @@ export class MatchWatch {
     this.sendTo(ps.playerId, this._startMsg(f, ps.playerId, { watch: !f.players.includes(ps.playerId) }));
   }
 
-  _defaultWatch() {
+  /**
+   * The default watch of a phase reset. `pick` (only the variant 联防 passes one, MatchUnite._startUniteVariant)
+   * overrides the choice for a viewer; without it: the own field, else — an eliminated human / spectator seat — the
+   * field of the player it follows (item 56), else the first.
+   * @param {((ps: any, fields: any[]) => any|null)|null} [pick] null = the pre-existing choice
+   */
+  _defaultWatch(pick = null) {
     this.watchers.clear();
     for (const ps of this._viewers()) {
       const own = this.fields.find((f) => f.players.includes(ps.playerId));
       // an eliminated human / spectator seat: the field of the player it follows (item 56), else the first
-      const f = own || this._watchTargetField(ps, this.fields) || this.fields[0];
+      const f = pick ? pick(ps, this.fields) : (own || this._watchTargetField(ps, this.fields) || this.fields[0]);
       if (!f) continue;
       this.watchers.set(ps.playerId, f.fieldId);
       if (ps.connected) this._sendField(ps.playerId, f.fieldId);
