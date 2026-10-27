@@ -48,7 +48,7 @@ describe('skinned meshes: the client keeps 1–4 bone influences per vertex (铃
   };
   const want = [[0.5, 1, 0], [2, 0, 0], [0, 3, 0]];
 
-  test('four influences per vertex (§35.9, the fixed extractor): Σ w · (bone · bind pose) · v', () => {
+  test('four influences per vertex (§37.9, the fixed extractor): Σ w · (bone · bind pose) · v', () => {
     const md = { ...base, boneIndices: [0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], boneWeights: [0.5, 0.5, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0] };
     assert.equal(skinStride(md), 4);
     assert.deepEqual(verts(md), want);

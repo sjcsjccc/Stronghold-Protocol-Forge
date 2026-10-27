@@ -137,6 +137,9 @@ test('机变按小队死锁修复（untimed/bot 路径 + 跨队扫尾）：1 真
   h.sched.advance(5000);
   assert.equal(sq1.done, true, 'the emptied untimed bot squad finishes via its bot callback');
   // 真人自己拿一张，队内 bot 依次代选，阶段照常收尾
+  // [sync 2026-10-27] 上游 0.3.2 换了 rng 派生：squad 0 的先手不再恒为真人 —— bot 先手时先让 sched 推完它们的代选
+  let spin = 0;
+  while (sq0.order[sq0.idx] !== human.playerId && spin++ < 8 && m.phase === PHASE.SP_DRAFT) h.sched.advance(2000);
   const pick0 = sq0.cards.find((c) => m._spAvail(sq0, c));
   assert.ok(pick0);
   assert.deepEqual(m.handle(human.playerId, { t: 'g.choice', idx: pick0.idx }), { ok: true });

@@ -535,7 +535,7 @@ export function buildParticleTrails(ps, cam, fd, tint) {
 let _trailPts = new Float32Array(75);
 
 /**
- * The bone influences per vertex of a skinned mesh file (§35.9 writes four; an extraction made before the fix of
+ * The bone influences per vertex of a skinned mesh file (§37.9 writes four; an extraction made before the fix of
  * 2026-10-15 wrote the client's own count — 2 for 铃兰 S3's fox tails, 琴柳's flags —, which read as four put every
  * vertex on the wrong bones and weights: a long strip across the board). 0 when the file has no usable skin.
  */

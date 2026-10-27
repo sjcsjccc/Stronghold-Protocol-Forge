@@ -181,7 +181,7 @@ export class PlayerPlacement {
       this.recompute();
       return OK;
     }
-    // hand/temp → board
+    // hand/temp → board：换棋复用来源格，整备区满了也能换（上游 0.3.3 / round53）
     if (!occ || occ.kind !== 'chess') {
       if (this.deployCount >= this.deployCap) return fail(ERR.BOARD_FULL);
     }

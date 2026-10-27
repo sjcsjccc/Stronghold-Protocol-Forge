@@ -58,11 +58,16 @@ export const HOOK_BUS = Object.freeze({ file: 'server/sim/battle/hooks.js', regi
  * Drift-guarded against the real sources; see the test.
  */
 export const HOOK_EVENTS = Object.freeze([
-  'ammoUsed', 'attack', 'bardRegen', 'battleEnd', 'battleStart', 'beforeAttack', 'beforeStatus', 'blocked',
-  'boomerangCaught', 'damaged', 'death', 'deploy', 'dodge', 'dollSwap', 'dollSwitch', 'elementBurst', 'elementHit',
-  'enemyAttackStart', 'enemyLeak', 'enemySpawn', 'fatal', 'heal', 'hit', 'hpDamage', 'kill', 'layerGain', 'lpLoss',
-  'merchantPay', 'nearl2:knockdown', 'palsyTrigger', 'skillEnd', 'skillStart', 'spGain', 'statusApplied', 'summonKill',
-  'tick',
+  'ammoUsed', 'attack', 'bardRegen', 'battleEnd', 'battleStart', 'beforeAttack', 'beforeStatus', 'block', 'blocked',
+  'boomerangCaught',
+  // 上游 0.3.2 把战斗结算改成分阶段顺序（DESIGN §37.32 / §37.33）之后，一个伤害从算到落地会逐个阶段发事件：
+  // 这几个名字是那次改动带进来的，kit 想按阶段改数值得靠它们（固定穿透 / 百分比穿透各在哪一步就有答案了）。
+  'damageApplied', 'damageApplying', 'damageBeforeApply', 'damageCalculate', 'damageCalculateTarget', 'damageOutput',
+  'damaged', 'death', 'deploy', 'dodge', 'dollSwap', 'dollSwitch',
+  'elementApplied', 'elementBurst', 'elementHit',
+  'enemyAttackStart', 'enemyLeak', 'enemySpawn', 'fatal', 'heal', 'hit', 'hpChanged', 'hpDamage', 'kill', 'layerGain',
+  'lpLoss', 'merchantPay', 'modifierApplied', 'nearl2:knockdown', 'palsyTrigger', 'projectileStep', 'skillEnd',
+  'skillStart', 'spGain', 'statusApplied', 'summonKill', 'tick',
 ]);
 
 /** Names that make a kit non-deterministic or environment-bound (rule 3), with why each one is a problem. */

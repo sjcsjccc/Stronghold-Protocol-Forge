@@ -31,7 +31,11 @@ export const TEXT_SIZES = Object.freeze(['sm', 'md', 'lg', 'xl']);
  *   关掉时导入路径与「没有这一格」逐字相同（走包内那条 `/workshop-resources/…` URL），也就是这一格的**一键回退**：
  *   一个包把加载源改坏了，玩家关掉这一格就回到原样（不变量由 `test/modAssetsMirrors.test.js` 钉住）。
  */
-export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8, muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, combatMetrics: false, prepDeployFold: true, otherSkins: true, workshopSkins: true, workshopSources: true, quality: 'high', officialFx: 'auto', textSize: 'sm', keys: DEFAULT_HOTKEYS, voiceLang: DEFAULT_VOICE_LANG, voiceLangByChar: Object.freeze({}) });
+// 配音三件套：默认语言、本土语言开关、逐干员的覆盖（空表）。合并时这三个键从默认对象里掉了，
+// sanitizeSettings 于是拿到了 undefined —— 老档案读出来就没有 voiceLang。
+export const DEFAULT_SETTINGS = Object.freeze({ bgm: 0.6, sfx: 0.8, voice: 0.8,
+  voiceNative: false,   // 本土语言开关（上游 0.3.2）；voiceLang / voiceLangByChar 在本行后面已有
+ muted: false, damageNumbers: true, officialDamageNumbers: false, ammoEnergyCount: false, combatMetrics: false, prepDeployFold: true, otherSkins: true, bondTimers: false, fullscreenWakeLock: false, workshopSkins: true, workshopSources: true, quality: 'high', officialFx: 'auto', textSize: 'sm', keys: DEFAULT_HOTKEYS, voiceLang: DEFAULT_VOICE_LANG, voiceLangByChar: Object.freeze({}) });
 /**
  * 设置「显示弹药与能量数量」的取值（上游 0.3.1 把「弹药数量」与「秘术师能量」两个开关合并成一个）：
  * 新键是布尔就用它；否则读旧键 —— 任一为 true 即为 true。旧键只在这里被读，**永不写回**。
@@ -112,10 +116,11 @@ export function voiceLangFor(s, charId) {
 /**
  * Sanitize persisted settings.
  * @param {any} raw
- * @returns {{ bgm: number, sfx: number, voice: number, muted: boolean, damageNumbers: boolean, officialDamageNumbers: boolean, workshopSkins: boolean,
- *   workshopSources: boolean, ammoCount: boolean,
+ * @returns {{ bgm: number, sfx: number, voice: number, muted: boolean, damageNumbers: boolean, officialDamageNumbers: boolean,
+ *   workshopSkins: boolean, workshopSources: boolean, ammoEnergyCount: boolean, combatMetrics: boolean, prepDeployFold: boolean,
+ *   otherSkins: boolean, bondTimers: boolean, fullscreenWakeLock: boolean,
  *   quality: 'high'|'medium'|'low',
- *   textSize: 'sm'|'md'|'lg'|'xl', keys: Record<'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string>,
+ *   textSize: 'sm'|'md'|'lg'|'xl', keys: Record<'buy'|'refresh'|'freeze'|'levelUp'|'retreat'|'sell'|'ready', string>,
  *   voiceLang: 'cn'|'jp'|'en'|'kr', voiceLangByChar: Record<string, 'cn'|'jp'|'en'|'kr'> }}
  */
 export function sanitizeSettings(raw) {
@@ -134,11 +139,16 @@ export function sanitizeSettings(raw) {
     combatMetrics: typeof r.combatMetrics === 'boolean' ? r.combatMetrics : DEFAULT_SETTINGS.combatMetrics,
     workshopSkins: typeof r.workshopSkins === 'boolean' ? r.workshopSkins : DEFAULT_SETTINGS.workshopSkins,
     workshopSources: typeof r.workshopSources === 'boolean' ? r.workshopSources : DEFAULT_SETTINGS.workshopSources,
+      bondTimers: r.bondTimers === true,
+      fullscreenWakeLock: typeof r.fullscreenWakeLock === 'boolean' ? r.fullscreenWakeLock : DEFAULT_SETTINGS.fullscreenWakeLock,
     quality: QUALITIES.includes(r.quality) ? r.quality : DEFAULT_SETTINGS.quality,
     officialFx: OFFICIAL_FX_MODES.includes(r.officialFx) ? r.officialFx : DEFAULT_SETTINGS.officialFx,
     textSize: TEXT_SIZES.includes(r.textSize) ? r.textSize : DEFAULT_SETTINGS.textSize,
     keys: sanitizeHotkeys(r.keys),
     voiceLang: VOICE_LANGS.includes(r.voiceLang) ? r.voiceLang : DEFAULT_SETTINGS.voiceLang,
+    // 上游 0.3.2 的 本土语言 开关。逐干员的语言（上游叫 voiceOverrides）本仓库一直叫 voiceLangByChar，
+    // 存储键沿用我们的，不并存两套。
+    voiceNative: r.voiceNative === true,
     voiceLangByChar: sanitizeVoiceLangByChar(r.voiceLangByChar),
   };
 }

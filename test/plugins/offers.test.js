@@ -215,7 +215,8 @@ test('the part belongs to the data classes and needs the offers permission (mani
 
 test('the schema names the part and the level, and the frozen API table carries the new names', () => {
   const schema = JSON.parse(fs.readFileSync(path.join(ROOT, 'schemas/plugin.schema.json'), 'utf8'));
-  assert.equal(schema.properties.api.maximum, 2);
+  // 本仓库把 API 抬到 3（0.3.2 的结算阶段钩子是新增式；v1/v2 的包照旧加载，`min` 仍是 1）。
+  assert.equal(schema.properties.api.maximum, 3);
   const api = fs.readFileSync(path.join(ROOT, 'docs/PLUGIN-API.md'), 'utf8');
   for (const row of ['manifest.field.offers', 'permission.offers', 'error.PLUGIN_OFFER_SHAPE', 'error.PLUGIN_OFFER_ROUNDS']) {
     assert.match(api, new RegExp(`\\| \`${row.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\` \\|`), row);

@@ -1,7 +1,11 @@
 // 选择模拟协议's left picture (2026-10-13, the owner's request: the event's second screen after 独立模拟): an original
 // isometric wireframe — a stepped fortress hull on a survey grid, two squares of defenders beside it, enemy spikes
 // closing in and a callout — drawn in the selected difficulty's colour (`currentColor`, set by the caller through
-// --d-color). The harder the difficulty, the more defenders and spikes. Pure SVG, no picture.
+// --d-color). The harder the difficulty, the more defenders and spikes.
+//
+// 本仓库的加料（0.13 起）：官方那张 modeChoice 图叠在画好的船体之上；图 404 / 解码失败时 **回落** 到画的那只
+// （onError 把 art 记进 bad，之后不再尝试）。所以「有图看官方、没图看画」两条路都在，干净安装也逐字节不变。
+import { useState } from '../../vendor/hooks.module.js';
 import { html } from './components.js';
 
 const S = 15;            // one unit in px of the 1000 × 640 view box
@@ -83,7 +87,10 @@ const SPIKE_PATHS = [
 /**
  * @param {{ difficulty: string }} props FUNNY | NORMAL | HARD | ABYSS
  */
-export function ProtocolScene({ difficulty }) {
+export function ProtocolScene({ difficulty, art = null }) {
+  // 这张图失败过就不再尝试（换难度会换 art，所以按 art 记住而不是布尔）
+  const [bad, setBad] = useState(null);
+  const pic = art && bad !== art ? art : null;
   const n = COUNT[difficulty] ?? COUNT.FUNNY;
   const spikes = SPIKE_PATHS.slice(0, SPIKES[difficulty] ?? 1);
   const grid = [];
@@ -92,6 +99,7 @@ export function ProtocolScene({ difficulty }) {
   const mastTop = iso(22.2, 4.3, 13.5);
   const callAt = iso(8, -6, 15);
   return html`<svg class="ps" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+    ${pic ? html`<image href=${pic} class="ps-art" x="0" y="0" width="1000" height="640" preserveAspectRatio="xMidYMid slice" onError=${() => setBad(art)} />` : null}
     <g class="ps-grid">${grid}</g>
     <path class="ps-cable" d=${`M${mastTop[0] + 60} -10 C${mastTop[0] + 70} 120 ${mastTop[0] - 20} 110 ${mastTop[0]} ${mastTop[1]}`} />
     ${PADS.map((p, i) => html`<g key=${`pad${i}`} class="ps-pad">

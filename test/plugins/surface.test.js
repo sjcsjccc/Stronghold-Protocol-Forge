@@ -118,7 +118,9 @@ test('the document table and buildSurface are the same rows', () => {
   for (const name of ['manifest.field.offers', 'permission.offers', 'error.PLUGIN_OFFER_SHAPE', 'error.PLUGIN_OFFER_ROUNDS', 'error.PLUGIN_OFFER_REFERENCE']) {
     assert.equal(rows.find(r => r.name === name).since, '0.3.1', name);
   }
-  assert.deepEqual(PLUGIN_API, { current: 2, min: 1 });
+  // 本仓库把 API 抬到 3（0.3.2 的那些结算阶段钩子是**新增**，v1/v2 的包照旧加载）；
+  // `min` 保持 1 —— 抬 min 等于一纸拒信，上游自己的四个模板与本仓库 67 个测试夹具都声明 api 1。
+  assert.deepEqual(PLUGIN_API, { current: 3, min: 1 });
   for (const r of rows) assert.doesNotMatch(r.since, /-dev$/, `${r.name}: since names a release`);
   assert.ok(rows.some((r) => r.since === SURFACE_SINCE), 'the frozen rows still name 0.3.0');
 });
@@ -254,7 +256,7 @@ test('STUDIO_ROUTES and the routes api() dispatches are the same set', () => {
   assert.deepEqual(discovered, [...STUDIO_ROUTES].sort());
   assert.ok(discovered.includes('POST /studio/api/catalog'));
   assert.ok(discovered.includes('POST /studio/api/catalog/install'));
-  assert.equal(PLUGIN_API.current, 2);
+  assert.equal(PLUGIN_API.current, 3);
   const disabled = src.replace("route === 'targets'", 'false');
   assert.equal(studioRoutesFromApi(disabled).includes('GET /studio/api/targets'), false);
   const method = src.replace("route === 'authors' && method === 'POST'", "route === 'authors' && method === 'GET'");

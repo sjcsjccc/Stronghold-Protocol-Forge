@@ -65,7 +65,7 @@ export function builtinMesh(name) {
 
 /**
  * A loaded mesh made ready for the runtime: vertex colours as 0…1 floats (the extracted files write them as bytes,
- * 0…255 — DESIGN §35.9 says 0…1; both are accepted).
+ * 0…255 — DESIGN §37.9 says 0…1; both are accepted).
  */
 export function normalizeMesh(m) {
   if (!m || !Array.isArray(m.positions)) return null;

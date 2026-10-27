@@ -29,10 +29,9 @@
 
 import { useEffect, useState } from '../../vendor/hooks.module.js';
 import { html, Icon, HexBadge, TierChip, Tooltip, MicroLabel } from './components.js';
-import { Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
+import { OperatorImage, Img, BondGlyph, CoinGlyph, GIcon, RichText } from './gameComponents.js';
 import { priceTone, mergeProgress, mergeTarget, shopBlockReason, chessLoadout, offerHeader, briefingBondTip, ownStandIn, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, diyGetter } from './gameLogic.js';
 import { itemIconUrl, profIconUrl, uiUrl, skillIconUrl, skillRecordIconUrl, moduleTypeIconUrl } from './assetUrls.js';
-import { portraitUrlOf, currentAppearanceLookup } from './portraitChain.js';
 import { data } from '../data.js';
 import { hotkeyLabelOf } from './settings.js';
 // [local-patch 2026-10-20] 卡池余量面板（g.pool → m.pool，本文件底部的 卡池 按钮打开）
@@ -112,7 +111,7 @@ export const ChessCard = modComponent('game.shopCard', function ChessCard({ slot
     <span class="mod-host" data-mod-slot="screen.game.shopCard" data-mod-slot-key=${slot.id}></span>
     <span class="scard__bg" aria-hidden="true"></span>
     <span class="scard__water" aria-hidden="true">${bonds[0] ? html`<${BondGlyph} bondId=${bonds[0]} />` : null}</span>
-    <${Img} src=${portraitUrlOf(m, c, { lookup: currentAppearanceLookup() })} class="scard__art" />
+    <${OperatorImage} m=${m} chess=${c} portrait ownerId=${priv?.playerId} class="scard__art" />
     <span class="scard__top">
       <${TierChip} tier=${tier} size="md" />
       <${PriceHex} slot=${slot} free=${free} poor=${reason === t('资金不足')} />
@@ -310,8 +309,12 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
   reward = null, onReward, onRewardLater, onArm = null, offBonds = null }) {
   const shop = priv?.shop || {};
   const slots = Array.isArray(shop.slots) ? shop.slots : [];
-  const chessSlots = slots.map((s, i) => ({ s, i })).filter(({ s }) => !s || s.kind !== 'item');
-  const itemSlots = slots.map((s, i) => ({ s, i })).filter(({ s }) => s && s.kind === 'item');
+  // 空槽没有 kind。上游 0.3.3：第一期 5 级新开的那个空装备格要靠服务端给的布局信息才留在装备列
+  // （`shop.layout = { chess, item }`，server/match/player/views.js）。
+  const layout = Number.isInteger(shop.layout?.chess) && Number.isInteger(shop.layout?.item) ? shop.layout : null;
+  const indexed = slots.map((s, i) => ({ s, i }));
+  const chessSlots = indexed.filter(({ s, i }) => (layout ? i < layout.chess : !s || s.kind !== 'item'));
+  const itemSlots = indexed.filter(({ s, i }) => (layout ? i >= layout.chess && i < layout.chess + layout.item : s && s.kind === 'item'));
   const frozen = !!shop.frozen;
   const funds = Number(priv?.funds) || 0;
   const remaining = Math.max(0, (priv?.deployCap ?? 8) - (priv?.deployCount ?? 0));
@@ -397,6 +400,7 @@ export function ShopBar({ priv, editable, collapsed, refreshBusy = false, onColl
       ${showReward ? null : html`<div class="shopbar__item">
         ${itemSlots.length
           ? itemSlots.map(({ s, i }) => {
+            if (!s) return html`<${EmptyCard} key=${`ie${i}`} item=${true} />`;
             if (s.sold) return html`<${SoldCard} key=${`is${i}`} item=${true} />`;
             const reason = shopBlockReason('buy', { priv, editable, slot: s, ...LOOKUPS });
             return html`<${ItemCard} key=${`i${i}:${s.id}`} slot=${s} idx=${i} frozen=${slotFrozen(s, frozen)} onBuy=${onBuy} onDetail=${onDetail} reason=${reason}

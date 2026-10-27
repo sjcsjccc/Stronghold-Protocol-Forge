@@ -142,7 +142,10 @@ describe('mod identity: entering a modded room needs the client to confirm the c
     // loaded. `room.join` deliberately did not: a room set is the host's to declare, never a joiner's.
     // 房内聊天（docs/META.md §1.8）又加了 `chatMode`：同样是**房主建的那个房间**的属性，不是加入者的。
     // 本房座位上限 (业主裁决 B5, docs/META.md §1.9) 再加 `seatCap`：房主选的座位数，同样是房主这一侧的。
-    assert.deepEqual(C2S['room.create'].$optional, ['mods', 'modIds', 'chatMode', 'seatCap', 'test']);
+    // 上游 0.3.2 又给 'room.create' 添了三格可选：difficulty（难度随版本有缺省与降级）、version（官方版本）、
+    // soloUnlimited（不限时）。要钉的行为没变 —— 我们那五格仍在，且都是可选（旧客户端不发也合法）。
+    assert.deepEqual(C2S['room.create'].$optional,
+      ['difficulty', 'mods', 'modIds', 'chatMode', 'seatCap', 'test', 'version', 'soloUnlimited']);
   });
 });
 

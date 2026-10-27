@@ -206,9 +206,13 @@ describe('四组声明: 形状合法 ⇒ 接受，并如实出现在解析结果
     //（`screen.game.shopCard` 是可重复宿主，每张商店卡一个容器）；第 10 个 `screen.room.aside` 由 G4(1)（87646c98）
     // 加进来（房间页侧栏宿主），那一笔同一口径改了 `modClientHosts` / `modPanelWraps` 两侧的 pin 与 docs 槽位表 ——
     // 本文件这条 pin 当时漏改。
+    // 2026-10-24 按社区投稿实际在用的位置补了后六个（server-ext 挂大厅旁栏 / 房间聊天 / 标题入口 / 战绩页，
+    // skin-picker 挂配装卡 / DIY 卡）：宿主都由**已存在的组件**自己渲染 `[data-mod-slot]`，
+    // 引擎不额外创建容器，所以它们不进 CLIENT_PANEL_CREATED。这张 pin 当时漏改，一并补上。
     assert.deepEqual(CLIENT_PANEL_SLOTS, ['root.overlays', 'root.guide', 'screen.game.aside', 'screen.result.footer',
       'screen.game.shopCard', 'screen.game.bondStrip', 'screen.game.hud', 'screen.game.overlay', 'screen.loadout.detail',
-      'screen.room.aside']);
+      'screen.room.aside', 'screen.lobby.aside', 'screen.room.chat', 'screen.title.entry', 'screen.stats.profile',
+      'screen.loadout.card', 'screen.diy.card']);
     assert.deepEqual(CLIENT_PANEL_REPEATABLE, ['screen.game.shopCard']);
     assert.deepEqual(CLIENT_REQUIRES, ['serviceWorker', 'cacheStorage', 'webCrypto']);
     // 可选字段不写就不出现（不然「没声明」与「声明成 undefined」会是两种字节）

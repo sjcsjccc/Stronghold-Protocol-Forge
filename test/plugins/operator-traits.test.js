@@ -8,7 +8,7 @@ import { checkOperatorTraitRuntime } from '../../public/js/battle/simLoader.js';
 import { installServerOperatorTraits } from '../../server/plugins/operatorTraits.js';
 import { applyRecordOverlay } from '../../shared/i18nData.js';
 import { contentSetFiles } from '../../server/plugins/contentSet.js';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fixture, guard } from '../helpers/contentFixtures.js';
 import { buildContentSet } from '../../server/plugins/contentSet.js';
 import { validateTraitSpec } from '../../server/plugins/operatorTraits.js';
@@ -17,7 +17,7 @@ import { loadBrowserSim } from '../../public/js/battle/simLoader.js';
 import { makeBattle } from '../helpers/battleHarness.js';
 import { DataSource } from '../../server/sim/simdata.js';
 import { setGameData } from '../../server/sim/content/support/index.js';
-import { elementBurst } from '../../server/sim/damage.js';
+import { elementBurst } from '../../server/sim/attack/element.js';
 import { makeMatch, legalTileFor, DATA } from '../match/harness.js';
 
 const CHAR = 'char_4145_ulpia', ID = 'chess_char_5_05_a', ITEM = 'chess_item_3_07_e_a';
@@ -337,9 +337,8 @@ test('production match host and an isolated browser module tree agree', { timeou
   const root = f.dir + '/runtime';
   fs.mkdirSync(root + '/server', { recursive: true });
   // Browser /sim has no Node loader: including it creates a cycle through the data shim.
-  // filter 收到的是**平台路径**（Windows 用反斜杠），所以按 basename 判，不能按 '/nodeData.js' 判 ——
-  // 漏掉那个文件会把 Node 专用的数据装载器一起复制进浏览器树，循环依赖 + 顶层 await = 死锁。
-  fs.cpSync('server/sim', root + '/server/sim', { recursive: true, filter: src => path.basename(src).toLowerCase() !== 'nodedata.js' });
+  fs.cpSync('server/sim', root + '/server/sim', { recursive: true, filter: src => path.basename(src) !== 'nodeData.js' });
+  assert.equal(fs.existsSync(path.join(root, 'server/sim/nodeData.js')), false);
   fs.cpSync('shared', root + '/shared', { recursive: true });
   fs.writeFileSync(root + '/package.json', '{"type":"module"}'); fs.writeFileSync(root + '/server/data.js', DATA_SHIM_JS);
   const sim = await loadBrowserSim({ base: pathToFileURL(root + '/server/sim/').href, data: set.data, bounds: set.bounds, cs: set.cs });

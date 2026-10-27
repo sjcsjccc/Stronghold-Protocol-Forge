@@ -462,7 +462,16 @@ describe('net.js', () => {
     assert.ok(ws().last('ping'), 'latency probe before hello');
     net.setName('  凯尔希  ');
     const hello = ws().last('hello');
-    assert.deepEqual({ ...hello, rid: 0 }, { t: 'hello', rid: 0, name: '凯尔希', version: PROTOCOL_VERSION, token: 'tok-1' });
+    // hello names the state-delta version it understands; a server that does not know the field ignores it.
+    const { STATE_DELTA_VERSION } = await import(pathToFileURL(path.join(ROOT, 'shared/stateDelta.js')).href);
+    assert.deepEqual({ ...hello, rid: 0 }, {
+      t: 'hello',
+      rid: 0,
+      name: '凯尔希',
+      version: PROTOCOL_VERSION,
+      delta: STATE_DELTA_VERSION,
+      token: 'tok-1',
+    });
     assert.equal(net.status, 'handshaking');
     ws().recv({ t: 'welcome', rid: hello.rid, playerId: 'p_1', token: 't', name: '凯尔希', serverNow: Date.now() });
     assert.equal(net.status, 'online');
@@ -1174,8 +1183,11 @@ describe('screen helpers', () => {
     assert.match(source, /const alignBlocked = isAlignBlocked\(align\);/, '非房主那一格读它');
     assert.match(source, /const soloAlignBlocked = hostStartAlignBlocked\(\{ solo: !coop, align \}\);/, 'solo 那一格也读它');
     // ② 结构：开始模拟那个按钮真的把 solo 那一格算进 disabled（改前这一条红 —— 明知缺件也能开局）
-    assert.match(source, /disabled=\$\{!facts\.canStart \|\| !online \|\| busy === 'start' \|\| soloAlignBlocked\}/,
-      'solo 房主缺件时开始按钮被挡（改前红）');
+    // 断言按合并后的事实放宽一次：上游 0.3.2 在这同一个 disabled 里加了「版本切换投票进行中」（`!!vote`）
+    // 这一格（§37.23.2）。要钉的行为没变 —— solo 房主缺件时也必须被挡，所以 `soloAlignBlocked` 仍须在
+    // 同一条表达式里，只是允许它与上游的 `!!vote` 并存。
+    assert.match(source, /disabled=\$\{!facts\.canStart \|\| !online \|\| busy === 'start' \|\|(?: !!vote \|\|)? soloAlignBlocked\}/,
+      'solo 房主缺件时开始按钮被挡（合并后允许与版本投票判据并存）');
     assert.match(source, /title=\$\{soloAlignBlocked \?/, '挡住的理由要说出来（不能只有一个灰按钮）');
     // ③ 行为：纯函数真跑
     const { isAlignBlocked, hostStartAlignBlocked } = await mod('screens/room.js');

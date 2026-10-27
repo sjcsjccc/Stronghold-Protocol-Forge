@@ -16,7 +16,7 @@ import { LOBBY_DEFAULTS, Room } from '../server/lobby.js';
 import { validateC2S } from '../shared/protocol.js';
 import { collectViolations } from '../server/match/invariants.js';
 import { buildBattleSpec, createBattleFromSpec } from '../server/sim/spec.js';
-import { leaderHitCancelled } from '../server/sim/damage.js';
+import { leaderHitCancelled } from '../server/sim/attack/health.js';
 import { normalizeSeats } from '../public/js/screens/room.js';
 import { DATA as MATCH_DATA, makeMatch } from './match/harness.js';
 import { planUnite } from '../server/match/unite.js';

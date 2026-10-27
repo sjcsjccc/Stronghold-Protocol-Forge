@@ -399,7 +399,9 @@ describe('消费点都接了链（源码级守卫）', () => {
   /** 这些文件以前直接调旧函数，现在必须全走链。 */
   const CONSUMERS = [
     'public/js/ui/gameComponents.js',     // UnitThumb：结算页 / 队伍面板 / 手牌共用的小头像
-    'public/js/ui/detailPanel.js',        // 详情页立绘
+    // 详情页立绘：0.3.2 起那一张由 OperatorImage 画（ownerId / skin 都是它的形参），
+    // 解析链的入口在 ui/gameComponents.js 里 —— 这两个文件是同一个消费点，不重复列。
+    'public/js/ui/detailPanel.js',        // 详情页（立绘交给 OperatorImage）
     'public/js/ui/shopBar.js',            // 商店卡立绘
     'public/js/ui/fallbackField.js',      // 补位小头像
     'public/js/screens/loadout.js',       // 干员调配：立绘 + 头像
@@ -421,9 +423,14 @@ describe('消费点都接了链（源码级守卫）', () => {
   test('每个消费点都传了 hook（`currentAppearanceLookup()`）—— 否则装了时装也不生效', async () => {
     for (const f of CONSUMERS) {
       const src = await read(f);
-      const usesChain = /(portraitUrlOf|avatarUrlOf)\(/.test(src);
+      // detailPanel 的图交给 OperatorImage（形参 ownerId / skin 都在），链的入口不在这里；
+      // 判据改成「要么自己调简写，要么把 ownerId/skin 交给 OperatorImage」。
+      const usesChain = /(portraitUrlOf|avatarUrlOf)\(/.test(src)
+        || /<\$\{OperatorImage\}/.test(src);   // 图交给 OperatorImage：链的入口在那个组件里
       assert.ok(usesChain, `${f} 应当用链上的简写`);
-      assert.ok(src.includes('currentAppearanceLookup'), `${f} 必须传 hook`);
+      // 自己调简写的必须把 hook 传进去；把图交给 OperatorImage 的那几个文件，hook 在组件里传（同一个入口）。
+      const ownCall = /(portraitUrlOf|avatarUrlOf)\(/.test(src);
+      assert.ok(!ownCall || src.includes('currentAppearanceLookup'), `${f} 必须传 hook`);
     }
   });
 });

@@ -6,20 +6,11 @@ import { spawnSync } from 'node:child_process';
 import { fxFixture } from './helpers/fxFixtures.js';
 import { skel } from './helpers/pluginFixtures.js';
 
-/** Windows 上没有 `python3`（只有 `python` / `py`）：按顺序找到第一个能跑的。 */
-function pythonBin() {
-  if (pythonBin.cached !== undefined) return pythonBin.cached;
-  for (const c of ['python3', 'python', 'py']) {
-    const r = spawnSync(c, ['-c', 'import sys; sys.exit(0)'], { encoding: 'utf8' });
-    if (r.status === 0) { pythonBin.cached = c; return c; }
-  }
-  pythonBin.cached = 'python3';
-  return pythonBin.cached;
-}
+const PY = ['python3', 'python'].find((bin) => spawnSync(bin, ['--version']).status === 0);
 
 function py(code) {
   const source = `import sys,json\nsys.path.insert(0, ${JSON.stringify(path.resolve('tools/local-extract'))})\nimport operators as op, extract as ex\n${code}`;
-  const r = spawnSync(pythonBin(), ['-B', '-c', source], { encoding: 'utf8' });
+  const r = spawnSync(PY ?? 'python3', ['-B', '-c', source], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout);
 }
@@ -47,10 +38,12 @@ test('full extraction needs --plugin-art; explicit --only plugin-art also author
 import contextlib,io
 
 root=Path(${JSON.stringify(f.root)})
+(root/'ui'/'autochess').mkdir(parents=True)
 ex.export_bundle=lambda *a: 0
 ex.export_enemy_spines=lambda *a: 0
 ex.export_token_spines=lambda *a: 0
 ex.export_scenes=lambda *a: 0
+ex.versions.export=lambda *a: 0
 ex.fx.export_fx=lambda *a,**k: 0
 calls=[]
 op.references=lambda *a: ['char_9001_test']
@@ -133,7 +126,7 @@ class Obj:
  def read(self): return NS(m_Name=self.name,image=Image())
  def read_typetree(self): return {'synthetic':self.name}
 def load(p):
- if 'chararts' in p: return NS(objects=[Obj('front','MonoBehaviour',1),Obj('back','MonoBehaviour',2)],container={'dyn/char_9001_test/defaultskin.prefab':Obj('prefab')})
+ if 'chararts/' in p.replace('\\\\','/'): return NS(objects=[Obj('front','MonoBehaviour',1),Obj('back','MonoBehaviour',2)],container={'dyn/char_9001_test/defaultskin.prefab':Obj('prefab')})
  suffix='' if 'avatar' in p else '_1'
  return NS(objects=[Obj('char_9001_test'+suffix),Obj('char_9001_test_2'),Obj('char_9001_test_skin#1'),Obj('char_9002_other')])
 sys.modules['UnityPy']=NS(load=load); sys.modules['aklz4']=NS()

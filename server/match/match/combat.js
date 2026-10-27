@@ -67,7 +67,10 @@ export class MatchCombat {
     const spawns = withBounties(this.gd, this.round, wave, ps.bounties, ps.playerId).map((s) => ({ ...s, ownerPlayerId: ps.playerId }));
     // [local-patch 2026-10-22] 超限词条抉择选中的怪：本轮出场，且不带悬赏金（业主 2026-10-18）
     for (const s of (this.traitSpawnFor ? this.traitSpawnFor(this.round) : [])) spawns.push(s);
-    const ev = { input, kind: 'normal', round: this.round, spawns, ...(preview ? { preview: true } : {}) };
+    // `waveSpawns`: the round's own wave before this player's bounties (a copy), so a draw every player shares picks the
+    // same units (鸭爵, GitHub #839)
+    const waveSpawns = (wave.spawns || []).map((s) => ({ ...s, mods: s.mods ? { ...s.mods } : undefined }));
+    const ev = { input, kind: 'normal', round: this.round, spawns, waveSpawns, ...(preview ? { preview: true } : {}) };
     // Preview construction failures go to the rehearsal's discard path, never Match.dispatch's live error sink.
     if (preview) this.dispatcher.dispatch(ps, 'onBattleStart', ev);
     else this.dispatch(ps, 'onBattleStart', ev);

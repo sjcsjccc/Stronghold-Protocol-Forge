@@ -52,6 +52,12 @@
 //                                              then runs in a match host, server/match/host/): a b.result whose
 //                                              `cs` is missing or not opts.cs is refused like an implausible one — the
 //                                              server simulates that battle itself
+//   opts.version     string (optional)          a non-default official version's registry id (DESIGN §37.23,
+//                                              shared/versions.js; the lobby passes it for such a room only, the match
+//                                              then runs in that version's match host on its data): this.version, the
+//                                              test journal's init.options.version, the external AI's context.gameVersion,
+//                                              m.public / m.result `version` (the page reads a replayed result with it).
+//                                              Absent, unknown or 'act2autochess' ⇒ this.version null (the default)
 //   opts.data        frozen game data (server/data.js getData()); may lack keys while data is generated
 //   opts.log         { info, warn, error, debug }
 //   opts.now         () => ms epoch             injectable clock (Date.now in production)
@@ -151,6 +157,7 @@
 //   opts.combatSpeed   game seconds per real second while battles run in real time (default 2, the forced 2×)
 //   opts.botRehearsal  candidate layouts a bot simulates per prep before placing (default 3, 0 = heuristic only;
 //                      a whole battle per candidate: ~20–300 ms of CPU each, see server/match/bot.js createRehearsal)
+//   opts.botStrategy  a registered ID or trusted server-side strategy object; defaults to SP_BOT_STRATEGY / 'legacy'
 //   opts.botSliceMs    wall-clock ms of rehearsal per scheduler callback (default 8 with a real scheduler, unbounded
 //                      with a virtual one); the rest runs in later callbacks (scheduleBotPrep)
 //   opts.botRehearsalDelegate  offer each bot prep's layout rehearsal to the current host's browser instead (DESIGN §14;
@@ -205,6 +212,8 @@
 //                    fail, BOSS_CLOCK_MS)
 
 import { PHASE, modeIdFor, bossHitLimitFrom, MAX_SEATS, holdInfiniteBondLayerCap, BOSS_HIT_LIMIT_INFINITE } from '../../shared/constants.js';
+import { isContentHash } from '../../shared/plugins/identity.js';
+import { DEFAULT_VERSION, versionById } from '../../shared/versions.js';
 import { MatchTraitDraft } from './match/traitDraft.js'; // [local-patch 2026-10-22] 超限模拟的「词条抉择」阶段
 import { isSoloRoomMode, isInfiniteMode } from '../../shared/infiniteMode.js'; // [local-patch 2026-10-22/23] 超限：solo_infinite + infinite(联机)
 import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squad pool sharing width
@@ -212,8 +221,7 @@ import { SQUAD_SIZE } from './unite100.mjs'; // [local-patch 2026-10-21] per-squ
 import { mergeVariantDecls, variantValue } from '../../shared/variants.js';
 // 行为开关层（DESIGN §28.43）：同一张合成规则（包 id 小的赢），另一张表。空数组 ⇒ 每一格的读取点走缺省路径。
 import { mergeBehaviourDecls } from '../../shared/behaviour.js';
-// 行为开关 `morphPairing` 的档位（DESIGN §28.43.1）：判据本体在 `shared/morph.js`，这一行只把这一局的档位算出来，
-// 往下交给 `GameData`（prep）、`battleOpts`（战斗）与 BattleSpec（客户端）。
+// 行为开关 `morphPairing` 的档位（DESIGN §28.43.1）：判据本体在 `shared/morph.js`。
 import { morphPairingOf } from '../../shared/morph.js';
 import { formView, isEliteForm } from '../../shared/formProjection.js';
 import { layoutOf } from '../../shared/layout.js';
@@ -226,6 +234,7 @@ import { SharedPool, SharedItemPool, drawDisabledBonds } from './pool.js';
 import { PlayerState } from './PlayerState.js';
 import { EffectDispatcher, getDefaultRegistry } from './effectsMeta.js';
 import { setupMatchWaves } from './waves.js';
+import { getBotStrategy } from './botStrategies.js';
 import { GAME_SPEED, HEADLESS_SLICE_MS } from './fields.js';
 import { MatchPlatform } from './match/platform.js';
 import { MatchInfra } from './match/infra.js';
@@ -241,7 +250,6 @@ import { MatchPrep } from './match/prep.js';
 import { MatchCombat } from './match/combat.js';
 import { MatchClientCombat } from './match/clientCombat.js';
 import { MatchRehearsal, REHEARSAL_ANSWER_MS } from './match/rehearsal.js';
-import { isContentHash } from '../../shared/plugins/identity.js';
 import { MatchReports } from './match/reports.js';
 import { MatchUnite } from './match/unitePhase.js';
 import { MatchBoss } from './match/bossRounds.js';
@@ -249,6 +257,7 @@ import { MatchSettle } from './match/settle.js';
 import { installTestTrace } from './testTrace.js';
 import { MatchTestCommands } from './match/testCommands.js';
 import { MatchOffers } from './match/offers.js';
+import { createExternalAI } from './llmGate.js';
 
 export { FLOW_TICKER_PRIORITY, DELAYS, BAND_TURN_SECONDS } from './match/common.js';
 
@@ -305,13 +314,18 @@ export class Match {
     this.broadcastFn = opts.broadcast;
     this.onEndFn = opts.onEnd;
     this.data = opts.data && typeof opts.data === 'object' ? opts.data : {};
-    /** the room's content hash (opts.cs, DESIGN **§34**，上游原文 `§32`): every BattleSpec carries it */
+      if (this.data.config?.version && !Object.hasOwn(this.data.config.modes || {}, this.modeId)) {
+        throw new RangeError(`Match: mode ${this.modeId} is unavailable in ${this.data.config.version.id}`);
+      }
+      /** the room's content hash (opts.cs, DESIGN **§34**，上游原文 `§32`): every BattleSpec carries it */
     this.cs = isContentHash(opts.cs) ? opts.cs : null;
     /** the room's visual set (opts.vs, DESIGN **§34.6**，上游原文 `§32.6`): every BattleSpec names it */
     this.vs = isContentHash(opts.vs) ? opts.vs : null;
     /** a room with gameplay plugins (opts.requireCs): a client result must name this match's cs (reports.js) */
     this.requireCs = opts.requireCs === true && !!this.cs;
-    /**
+      /** a non-default official version's id (opts.version, DESIGN §37.23), else null (the default, act2autochess) */
+      this.version = typeof opts.version === 'string' && opts.version !== DEFAULT_VERSION && versionById(opts.version)
+        ? opts.version : null;    /**
      * The content this match runs with (DESIGN §28.2): `{ digest, packs }`, or null for a plain install. It goes into
      * every BattleSpec (`spec.mods`) so a field's result is always attributable to the content that produced it.
      *
@@ -471,6 +485,7 @@ export class Match {
     this.gameSpeed = this._combatSpeedBase * this.matchRate;
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;
+    this.bot = getBotStrategy(opts.botStrategy ?? env('SP_BOT_STRATEGY'));
     /** wall-clock budget of one rehearsal slice (scheduleBotPrep) */
     this.botSliceMs = Number.isFinite(opts.botSliceMs) && opts.botSliceMs > 0 ? opts.botSliceMs : this.sched.virtual ? Infinity : BOT_SLICE_MS;
     /**
@@ -514,7 +529,15 @@ export class Match {
     this._rehearsalSeq = 0;
     /** how this match's delegated rehearsals ended (the log lines above; the tests read it) */
     this.rehearsalStats = { delegated: 0, answered: 0, takeovers: 0 };
-    this.ds = dataSourceFor(this.data, this.formView, this.eliteForm);
+      /**
+       * The server's own simulation pool (server/workers/roomPool.js), or null when the operator started none. It is a
+       * placement decision only: `poolRehearsal` submits the same candidates the local run would simulate and falls back
+       * to simulating them here whenever the pool is absent, busy or broken.
+       */
+      this.simPool = opts.simPool || null;
+      /** how the bot rehearsals that were offered to `simPool` ended — separate from rehearsalStats (its keys are asserted) */
+      this.rehearsalPoolStats = { pooled: 0, accepted: 0, fallbacks: 0 };
+      this.ds = dataSourceFor(this.data, this.formView, this.eliteForm);
     /** client-side combat (DESIGN §14) — see the header */
     this.clientCombat = opts.clientCombat != null ? !!opts.clientCombat : envClientCombat();
     this.verifyMode = parseVerify(opts.verify ?? env('SP_VERIFY'));
@@ -665,7 +688,8 @@ export class Match {
     this.setupRevision = 0;
     this.setupVote = null;
     this._setupVoteSeq = 0;
-    this._lastSetupVoteAt = -Infinity;
+    /** @type {Map<string, number>} last accepted 重刷本局 start per seat (30 s cooldown; DESIGN §28.21) */
+    this._rerollStartAt = new Map();
     this._turnTimer = null;
     this._pubDirty = false;
     this._pubTimer = null;
@@ -696,7 +720,8 @@ export class Match {
     this.spSquads = null; // [local-patch 2026-10-21] 机变按小队 (the > MAX_SEATS variant)
     this.wave = null;
     this.bossWaves = null;
-    this.bossPairs = null; // drawn once per match; the hidden round retains partners and sides
+    this.bossPairs = null; // drawn for the Final Assault, drawn anew for the Hidden Core (GitHub #845, DESIGN §37.27)
+    this.bossPairsRound = null; // the round whose first plan drew bossPairs (a re-plan after a departure keeps them)
     this.fields = [];
     this.runner = null;
     /** playerId → fieldId */
@@ -738,6 +763,7 @@ export class Match {
     // [ASSUMED] A real scheduler keeps the 8 ms bot and headless slices, including a test match,
     // so one callback cannot run to HARD_CAP_SECONDS. Virtual time stays unbounded (the defaults
     // above). The input journal records the steps that callback took; replay stops there.
+    this.externalAI = createExternalAI(this, opts);
     if (this.test && opts.journal !== false) installTestTrace(this, opts);
   }
 }

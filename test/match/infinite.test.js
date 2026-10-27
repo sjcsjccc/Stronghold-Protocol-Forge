@@ -149,7 +149,7 @@ describe('超限模拟·联机 (infinite)', () => {
 
   test('单人类的联机超限不受时限（soloUntimed），AI 队友由服务端代选', () => {
     const h = makeMatch({
-      mode: 'infinite', difficulty: 'HARD', humans: 1, bots: 1, seed: 31, fake: true, hostId: 'p_0',
+      mode: 'infinite', difficulty: 'HARD', humans: 1, bots: 1, seed: 31, fake: true, hostId: 'p_0', aiPicksLast: true, // [sync 2026-10-27] 上游 0.3.2 换了 rng 派生：seed 31 的洗牌不再保证人类先手，显式钉住
       script: (b) => (b.kind === 'boss' || b.kind === 'hidden' ? { bossDps: 20000 } : { duration: 1, leaks: {} }),
     }).start();
     const m = h.m;

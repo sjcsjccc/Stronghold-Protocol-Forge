@@ -123,14 +123,23 @@ describe('the postMessage contract', () => {
     assert.equal(nested.reason, 'intent');
     const buy = validatePluginMessage({ v: 1, t: 'g.buy', slot: 0 });
     assert.equal(buy.reason, 'intent');
-    // ⚠️ 不能对 `Object.keys(C2S)` 全键断言"都是意图"：C2S 是一张**共享的**客户端→服务端消息表，
-    // 里面除了对局意图（hello / ping / room.* / g.* / b.*）还有**非对局**消息 —— 查战绩 `records.mine`、
-    // 资源挑战 `resource.challenge.request` / `resource.reset` / `resource.proof`、包间消息 `pack.msg`。
-    // 它们本来就不该被 isIntentType 认成意图（实测这几个走的是 `shape` 分支，不是 `intent`）。
-    // 所以只对**真正的意图键**断言；判定用 isIntentType 自己 ⇒ C2S 增长时不会漂，也不用在这里抄一份名单。
-    const intents = Object.keys(C2S).filter((k) => isIntentType(k));
-    assert.ok(intents.length > 0, 'C2S 里应当有对局意图');
-    for (const key of intents) {
+    // Every client message a plugin could put on the wire must be refused ... except the transport-level control
+    // messages, which carry no match intent (a plugin resyncing its own state view decides nothing in the match).
+    // 不携带对局意图、但仍然必须被拒的控制类消息：`state.resync`（传输层重同步）与本仓库的
+    // `records.mine`（录像列表查询 —— 它是「我的录像」这条 C2S，不是意图，形状也进不了插件消息
+    // schema）。两者都靠下面那句「必须被拒」守，而不是靠意图分类。
+    // 不携带对局意图、但仍必须被拒的那些 C2S：传输层重同步（state.resync）、录像查询（records.mine）、
+    // 本仓库的资源挑战四件套（resource.*，这是客户端向服务端证明资源文件没被篡改）与包消息（pack.msg）。
+    // 它们都不是意图，形状也进不了插件消息 schema —— 靠下面那句「必须被拒」守，而不是靠意图分类。
+    const control = new Set(['state.resync', 'records.mine', 'resource.challenge.request',
+      'resource.reset', 'resource.proof', 'pack.msg']);
+    for (const key of Object.keys(C2S)) {
+      if (control.has(key)) {
+        const r = validatePluginMessage({ v: 1, t: key });
+        assert.equal(r.ok, false, key);
+        continue;
+      }
+      assert.equal(isIntentType(key), true, key);
       const r = validatePluginMessage({ v: 1, t: key });
       assert.equal(r.ok, false, key);
       assert.equal(r.reason, 'intent', key);

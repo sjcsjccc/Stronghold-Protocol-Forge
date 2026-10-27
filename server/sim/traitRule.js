@@ -20,7 +20,12 @@
 // 敌人是战斗中出生的（spawns.js），没有出生钩子 ⇒ 敌方光环走 tick 扫尾补新怪，引擎文件一个不动。
 // 普通模式的 flags 没有这些键 ⇒ 本文件是纯 no-op，零开销。
 
-import { heal, applyHpLoss, periodicDamage } from './damage.js';
+// [local-patch 2026-10-27] 上游 0.3.2 把 damage.js 拆进 attack/：heal→attack/heal.js，
+// periodicDamage→attack/helpers.js，applyHpLoss(battle,src,tgt,amt,dmg)→attack/health.js
+// 的 applyHpDecrease(battle, {source,credit,target,dmg}, amt)（同一套 bossPool/fatal 逻辑）。
+import { heal } from './attack/heal.js';
+import { periodicDamage } from './attack/helpers.js';
+import { applyHpDecrease } from './attack/health.js';
 
 const ALLY_AURA = 'trait_ally_aura';
 const ENEMY_AURA = 'trait_enemy_aura';
@@ -91,7 +96,7 @@ export function installTraitRule(battle) {
       for (const u of allies) {
         if (!isMeleeUnit(u)) continue;
         if (barrierPct > 0) battle.addBuff(u, { key: 'trait_barrier', shield: u.s.maxHp * barrierPct });
-        else applyHpLoss(battle, null, u, u.s.maxHp * -barrierPct, periodicDamage(u.s.maxHp * -barrierPct));
+        else applyHpDecrease(battle, { source: null, credit: null, target: u, dmg: periodicDamage(u.s.maxHp * -barrierPct) }, u.s.maxHp * -barrierPct);
       }
     }
     if (byMissing != null && byMissing !== 0) {
@@ -128,7 +133,7 @@ export function installTraitRule(battle) {
       nextJumpAt = now + 2;
       for (const u of allyUnitsOf(battle)) {
         if (regenPct > 0) heal(battle, null, u, u.s.maxHp * regenPct, { regen: true, silent: true });
-        if (corrodePct > 0) applyHpLoss(battle, null, u, u.s.maxHp * corrodePct, periodicDamage(u.s.maxHp * corrodePct));
+        if (corrodePct > 0) applyHpDecrease(battle, { source: null, credit: null, target: u, dmg: periodicDamage(u.s.maxHp * corrodePct) }, u.s.maxHp * corrodePct);
       }
     }
   });

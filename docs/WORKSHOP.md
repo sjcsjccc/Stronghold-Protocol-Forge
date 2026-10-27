@@ -93,6 +93,18 @@ workshop/<packId>/
 | `skins` | **已实现，见 §1.17** | 干员时装（皮肤）与「换装」Tab | 写成 `skins: [{ id, charId, name, art?, voices? }]`（一套外观的**数据**）；**哪一套生效**由一个注册了的外观提供者决定（C 层面板导出的 `appearance(ctx)`），玩家可以用设置里的「工坊外观」整个关掉。只装数据包不会有画面变化 —— 那需要那个提供者。**不要**改成 `art.chars[<charId>]`：那给的是**唯一一套**素材，换不了装 |
 | `official` / `config` / `meta` / `shared` / `theme` / `serverModules` | `PACK_UNKNOWN_FIELD` | 官方口径文件 / 规则改写 / match 元注册表 / 共享层补丁 / 主题 / 服务端模块 | **刻意没有通道**（`config` 见下面那一段；其余是引擎特性或 wire 契约，按 `AGENTS.md`「Official first … the maintainer's decision only」）。**判断一字不变**；属于「**引擎先实现、包只声明**」那一类规则改动走 §1.22 的 `behaviour`（唯一入口）—— **不是**这六个键复活 |
 
+**已知的旧写法（2026-10-25 复验 0.20.0 时实地见到的，不是猜的）**：
+
+| 旧写法 | 现在的报错 | 今天该往哪儿写 |
+|---|---|---|
+| `pack.json` 顶层 `stripDiyOverlaps` | `PACK_UNKNOWN_FIELD` | 这个开关没有对应通道：自选编队的叠放由引擎自己按
+  棋子类型决定，包看不到也不该关。删掉这个键即可，其余字段照常生效。 |
+| `client.panels[].wraps: "briefing.bonds"` | `CLIENT_WRAP_UNKNOWN_COMPONENT` | 包裹点闭集在
+  `shared/modSurface.js CLIENT_WRAP_COMPONENTS`：`briefing.bonds` 不是本版本渲染的引擎组件。要在大厅侧栏 /
+  房间聊天这类位置挂东西，用 §1.9 的**挂载点**（`screen.lobby.aside` 等十六个），不要包组件。 |
+
+这两条来自本地草稿目录里几个旧包的实测；商店现有 30 个包在同一支引擎上 **30/30 装上、0 被拒**。
+
 `content` 只接受上表列出的文件，而且**不认识的条目点名整包拒绝**（`UNKNOWN_CONTENT_FILE`）—— 从前它是安静过滤掉的，
 作者看到的是「包合法、我写的那件事没发生」。**`config` 被刻意排除**：一个能改写经济、回合表或难度参数的包改的是
 规则而不是内容，那需要另一套审查机制，不在本功能范围内。**`behaviour`（§1.22）不是 `config` 换了个名字**：它只收
@@ -957,7 +969,7 @@ export function mount(ctx) {
 `default` 导出同一个函数也行。**模块源码进包的身份哈希**：改了面板的字节就是换了一个包（DESIGN §28.8），所以不
 用担心「摘要一样、界面不一样」。
 
-**十个挂载点**（闭枚举，写别的整包被拒：`CLIENT_BAD_PANEL_SLOT`）：
+**十六个挂载点**（闭枚举，写别的整包被拒：`CLIENT_BAD_PANEL_SLOT`）：
 
 | `slot` | 位置 | 容器谁创建 |
 |---|---|---|
@@ -971,11 +983,17 @@ export function mount(ctx) {
 | `screen.game.overlay` | 对局画面之上（整屏覆盖层） | 组件渲染 |
 | `screen.loadout.detail` | 干员详情面板里（插一节） | 组件渲染 |
 | `screen.room.aside` | 房间屏（等待开局的那一屏）的旁栏 | 组件渲染 |
+| `screen.lobby.aside` | 大厅屏的侧栏 | 组件渲染 |
+| `screen.room.chat` | 房间屏的聊天区 | 组件渲染 |
+| `screen.title.entry` | 标题屏的代号输入 / 开始按钮下方 | 组件渲染 |
+| `screen.stats.profile` | 战绩页的个人资料块里 | 组件渲染 |
+| `screen.loadout.card` | 干员调配屏的列表区上方 | 组件渲染 |
+| `screen.diy.card` | 自选（DIY）屏的卡区上方 | 组件渲染 |
 
 前四个是**固定浮层**：与当前在哪个界面无关，面板挂一次就一直在，容器由注册点在面板真的挂载时创建（没有包声明
 `client` 时页面上一个容器都没有）。
 
-后六个是**既有组件里的宿主**（业主裁决 2026-10-10），容器由**组件自己**渲染 `[data-mod-slot]`。三条性质：
+后十二个是**既有组件里的宿主**（业主裁决 2026-10-10；后六个是 2026-10-24 按社区投稿实际在用的位置补的），容器由**组件自己**渲染 `[data-mod-slot]`。三条性质：
 
 - **空闲时零影响**：容器 `display: contents`（不产生盒子），里面的面板默认 `pointer-events: none`（不吃点击）。
   想让标记/手势/一节接收输入，在你自己的样式表里打开 `pointer-events: auto` —— 默认绝不能是「一层看不见的东西

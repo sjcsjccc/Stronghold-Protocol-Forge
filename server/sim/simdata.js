@@ -582,6 +582,7 @@ export class DataSource {
       waves: asMap(unwrap(raw.waves, 'waves'), 'id') ?? {},
       backups: raw.backups && typeof raw.backups === 'object' && raw.backups.units ? raw.backups : null,
       effects: raw.effects && typeof raw.effects === 'object' ? raw.effects : null,
+      config: raw.config ?? null,
     };
     this.fallback = fallback;
     /** 形态投影视图（构造参数 `opts.forms`）；null ⇒ 一条 `_a` 都用自己那份记录。 */

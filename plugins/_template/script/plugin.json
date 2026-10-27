@@ -5,7 +5,7 @@
   "name": "Script training guard",
   "version": "1.0.0",
   "app": ">=0.3.0 <0.4.0",
-  "api": 1,
+  "api": 2,
   "class": "script",
   "scope": ["room"],
   "authors": ["Your name"],

@@ -73,6 +73,7 @@ export class PlayerViews {
     return {
       t: 'm.private',
       playerId: this.playerId,
+      ...(Number.isInteger(this.aiTakeoverRound) ? { aiTakeoverRound: this.aiTakeoverRound } : {}),
       seat: this.seat,
       alive: this.alive,
       lp: this.lp,
@@ -93,6 +94,8 @@ export class PlayerViews {
         refreshPrice: free ? 0 : this.gd.refreshPrice,
         freeRefreshes: this.shop.freeRefreshes,
         frozen: this.shop.frozen,
+        // 上游 0.3.3：空槽没有 kind，第一期 5 级新开的那个空装备格靠这条布局信息留在装备列
+        layout: { ...(this.shop.layout || this.gd.shopSlots(this.shop.level)) },
         slots,
         // `source` 'merge' = the promotion reward (晋升奖励); any other offer (a strategy, an item, a 特质) carries the
         // `label` the bar shows instead; `queued` = offers waiting behind it (player report #6 after 0.1.0)

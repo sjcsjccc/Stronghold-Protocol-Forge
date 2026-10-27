@@ -34,15 +34,16 @@
 // The stats block (chessStatsBlock), the 特性 text (traitText) and the talent list (chessTalents) are exported: the 干员调配
 // screen's 局内数值 section draws the same ones for the chosen skill / module, without a live entry (GitHub issue #64).
 
+import { BondTimers } from './bondTimers.js';
 import { useEffect } from '../../vendor/hooks.module.js';
 import { html, Icon, TierChip, MicroLabel, Button, confirmDialog, useTicker } from './components.js';
-import { Img, RichText, UnitThumb, BondGlyph, GIcon, diyToken } from './gameComponents.js';
+import { Img, RichText, UnitThumb, OperatorImage, BondGlyph, GIcon, diyToken } from './gameComponents.js';
 import { attackInterval, rangeGridBox, fmtNum, tileKey, chessLoadout, nextThreshold, bondTier, briefingBondTip, pieceBondIds, grantedBonds, morphPairings, slotPolicy, ownStandIn, standInOf, standInLoadout, standInLabel, standInTip, standInForText, ownDiyRecord, ownDiyPick, diyRecordFor, pickGetter, availableVoiceLangs, unitPick, unitCultivation } from './gameLogic.js';
 import { updateSettings, settingsStore, useSettings } from './settings.js';
 import { dubsInstalled } from '../voiceDubs.js';
 import { VOICE_LANG_NAMES } from '../../../shared/constants.js';
 import { morphSlotPolicy } from '../../../shared/plugins/rules.js';
-import { chessPortraitUrl, skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
+import { skillIconUrl, skillRecordIconUrl, profIconUrl, subProfIconUrl, itemIconUrl, enemyIconUrl, tokenAvatarUrl, factionIconUrl, uiUrl, moduleTypeIconUrl } from './assetUrls.js';
 // 立绘走**统一解析链**（`portraitChain.js`）：同一个干员在详情页 / 手牌 / 商店卡 / 自选池里是同一个函数，
 // 所以不会再出现「卡面是那套外观、详情页是原版」。没有外观提供者时它与 `chessPortraitUrl` 逐字相同。
 import { portraitUrlOf, currentAppearanceLookup } from './portraitChain.js';
@@ -417,7 +418,9 @@ function skillTextNote(sk) {
   return note ? html`<p class="dhint dhint--rule" data-skill-note=${sk.skillId}><${Icon} name="info" />${t(note)}</p>` : null;
 }
 
-export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bonds, offBonds = null, loadout, onBond, live = null, hint = null, unitItems = null, standIn = null, diy = null, voiceSettings = null, cultOpts = null, morphMode = 'official', onUnequip = null }) {
+// `ownerId` / `skin` 来自 resolveDetail（形参表末尾那两项）：详情页的大图也要按**这一颗棋子属于哪个座位**的
+// 皮肤画，否则同一个人在手牌、详情、结算三处会是三张不同的图。
+export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bonds, offBonds = null, loadout, onBond, live = null, hint = null, unitItems = null, standIn = null, diy = null, voiceSettings = null, cultOpts = null, morphMode = 'official', onUnequip = null, ownerId = null, skin = null }) {
   const m = data.get('assets');
   const hp = hpOf(live, snapHp);
   // 0.2.0 自选编队: `chess` is then the composed 自选 record (the operator, the slot's tier / price); its skill and module are
@@ -459,7 +462,7 @@ export function ChessDetail({ chess, piece, unit, snapHp, editable, onSell, bond
   blocks.head = html`
     <div key="head" class="dhead">
       <div class=${cx('dhead__art', golden && 'is-golden', `dhead__art--t${c.tier}`)}>
-        <${Img} src=${portraitUrlOf(m, body, { lookup: currentAppearanceLookup() })} fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" rec=${si} />`} />
+        <${OperatorImage} m=${m} chess=${body} ownerId=${ownerId} skin=${skin} portrait avatarFallback fallback=${html`<${UnitThumb} kind="chess" id=${c.chessId} size="lg" rec=${si} ownerId=${ownerId} skin=${skin} />`} />
       </div>
       <div class="dhead__info">
         <div class="dhead__chips">
@@ -823,6 +826,8 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     const rec = c ? ownDiyRecord(c, priv, dd) : null;
     return rec ? { chess: rec, diy: ownDiyPick(priv, c) } : null;
   };
+  const appearance = { ownerId: target.kind === 'unit' ? target.unit?.ownerId ?? null
+    : target.owner ?? (target.foreign ? null : priv?.playerId), skin: target.unit?.skin || null };
   if (target.kind === 'piece') {
     const e = pieces?.get(target.uid);
     if (!e) return null;
@@ -831,8 +836,8 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     if (p.kind === 'token') { const t = data.lookup('tokens', p.id) || diyToken(p.id); return t ? { type: 'token', token: t, piece: p, ownerId: tokenOwnerId(p, pieces) } : null; }
     const c = data.lookup('chess', p.id);
     const d = ownDiy(c);
-    if (d) return { type: 'chess', chess: d.chess, piece: p, standIn: null, diy: d.diy };
-    return c ? { type: 'chess', chess: c, piece: p, standIn: ownSi(c) } : null;
+    if (d) return { type: 'chess', ...appearance, chess: d.chess, piece: p, standIn: null, diy: d.diy };
+    return c ? { type: 'chess', ...appearance, chess: c, piece: p, standIn: ownSi(c) } : null;
   }
   if (target.kind === 'chess') {
     // a bond popup's 变形同构体 row hands the wearer's item ids on (bondStrip onMember): the card shows the pair and the chip
@@ -850,9 +855,9 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     // 0.2.2: a teammate's member card reads its unit's 潜能 / 练度 when the row hands it on (`target.cultivation`), else
     // the defaults (never the viewer's own settings)
     const cv = foreign ? (target.cultivation !== undefined ? { cultivation: target.cultivation } : { ops: null }) : null;
-    if (d) return { type: 'chess', chess: d.chess, hint: target.hint || null, standIn: null, diy: d.diy, ...(items.length ? { unitItems: items } : {}), ...(cv ? { cultOpts: cv } : {}), ...tap };
+    if (d) return { type: 'chess', ...appearance, chess: d.chess, hint: target.hint || null, standIn: null, diy: d.diy, ...(items.length ? { unitItems: items } : {}), ...(cv ? { cultOpts: cv } : {}), ...tap };
     const si = !c ? null : foreign ? (typeof target.standInFor === 'string' && target.standInFor ? standInOf(c, backups) : null) : ownSi(c);
-    return c ? { type: 'chess', chess: c, hint: target.hint || null, standIn: si, ...(items.length ? { unitItems: items } : {}), ...(cv ? { cultOpts: cv } : {}), ...tap } : null;
+    return c ? { type: 'chess', ...appearance, chess: c, hint: target.hint || null, standIn: si, ...(items.length ? { unitItems: items } : {}), ...(cv ? { cultOpts: cv } : {}), ...tap } : null;
   }
   if (target.kind === 'item') { const it = data.lookup('items', target.id); return it ? { type: 'item', item: it } : null; }
   if (target.kind === 'enemy') { const en = data.lookup('enemies', target.id); return en ? { type: 'enemy', enemy: en, count: target.count } : null; }
@@ -876,8 +881,8 @@ export function resolveDetail(target, pieces, { priv = null, backups = data.get(
     // 0.2.2: another player's unit says its 潜能 / 练度 itself (UnitInfo potential / cultivate); an own piece's unit follows
     // m.private.ops (the panel's `cultOpts`)
     const cv = own?.piece ? null : { cultOpts: { cultivation: unitCultivation(u) } };
-    if (dr) return { type: 'chess', chess: dr, piece: own?.piece || null, unitId: u.id, unitItems: Array.isArray(u.items) ? u.items : null, standIn: null, diy: pick, ...cv };
-    if (c) return { type: 'chess', chess: c, piece: own?.piece || null, unitId: u.id, unitItems: Array.isArray(u.items) ? u.items : null, standIn: si, ...cv };
+    if (dr) return { type: 'chess', ...appearance, chess: dr, piece: own?.piece || null, unitId: u.id, unitItems: Array.isArray(u.items) ? u.items : null, standIn: null, diy: pick, ...cv };
+    if (c) return { type: 'chess', ...appearance, chess: c, piece: own?.piece || null, unitId: u.id, unitItems: Array.isArray(u.items) ? u.items : null, standIn: si, ...cv };
     const t = data.lookup('tokens', u.defId) || diyToken(u.defId);
     if (t) return { type: 'token', token: t, unitId: u.id, ownerId: tokenOwnerId(own?.piece, pieces) };
     const en = data.lookup('enemies', u.defId);
@@ -909,14 +914,15 @@ export function selectVoiceKey(detail) {
  *   resolved as another player's carries its own, `detail.cultOpts`)
  *   live: the unit's live stats (unitStatsEntry + src 'battle' | 'prep') — an object, or a getter the panel re-reads 4×
  *   a second (the battle's own sim, battle/runner.js unitStats); null ⇒ the record's numbers
+ *   bondTimers: optional getter of the selected unit’s snapshot readouts (#746), sampled with live stats.
  *   voice: whether the panel may speak — 选中干员 (audio.voice 'select') when it opens on an operator the player tapped:
  *   a piece on the field or in the hand, a shop / reward card, a bond member. The game screen passes true in every phase
  *   (the owner's request of 2026-10-08 「添加一下干员点击上去的语气一样的语音」 lifted 2026-10-03's 「整备阶段不需要干员语音」
  *   for this line only; [ASSUMED] the official prep tap says 选中干员 like the battle's FOCUS_CHAR)
  */
-export const DetailPanel = modComponent('loadout.detail', function DetailPanel({ detail, editable, snapHp, onClose, onSell, onDestroy, onUnequip = null, bonds = [], offBonds = null, loadout = null, ops = null, onBond = null, side = 'left', shopOpen = false, live = null, voice = false }) {
+export const DetailPanel = modComponent('loadout.detail', function DetailPanel({ detail, editable, snapHp, onClose, onSell, onDestroy, onUnequip = null, bonds = [], offBonds = null, loadout = null, ops = null, onBond = null, side = 'left', shopOpen = false, live = null, bondTimers = null, voice = false, morphMode = 'official', unequipAllowed = false }) {
   const getter = typeof live === 'function' ? live : null;
-  useTicker(detail && getter ? 250 : 0);
+  useTicker(detail && (getter || bondTimers) ? 250 : 0);
   // 配音语言 (v0.7.1): the panel is the component that subscribes to the settings store, so picking a dub in the card
   // re-renders it at once (ChessDetail itself is also called directly by tests and must stay hook-free).
   const voiceSettings = useSettings();
@@ -950,7 +956,8 @@ export const DetailPanel = modComponent('loadout.detail', function DetailPanel({
       data-mod-slot-key=${detail?.type === 'chess' ? (detail.chess?.chessId || detail.standIn?.charId || detail.chess?.charId || null) : null}></div>
     <button type="button" class="dpanel__close" aria-label=${t('关闭')} onClick=${onClose}><${Icon} name="close" /></button>
     <div class="dpanel__scroll">
-      ${detail.type === 'chess' ? html`<${ChessDetail} chess=${detail.chess} piece=${detail.piece} snapHp=${snapHp} editable=${editable} onSell=${sellIt}
+      ${bondTimers ? html`<${BondTimers} rows=${bondTimers()} />` : null}
+      ${detail.type === 'chess' ? html`<${ChessDetail} chess=${detail.chess} ownerId=${detail.ownerId} skin=${detail.skin} piece=${detail.piece} snapHp=${snapHp} editable=${editable} onSell=${sellIt}
         bonds=${bonds} offBonds=${offBonds} loadout=${loadout} onBond=${onBond} live=${liveNow} hint=${detail.hint || null} unitItems=${detail.unitItems || null}
         standIn=${detail.standIn || null} diy=${detail.diy || null} voiceSettings=${voiceSettings} cultOpts=${detail.cultOpts || { ops }} onUnequip=${onUnequip} />` : null}
       ${detail.type === 'item' ? html`<${ItemDetail} item=${detail.item} piece=${detail.piece} editable=${editable} onDestroy=${destroyIt} offBonds=${offBonds} />` : null}

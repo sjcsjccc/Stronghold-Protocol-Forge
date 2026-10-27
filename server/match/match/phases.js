@@ -10,9 +10,8 @@ import { buildNormalWave, buildBossWave } from '../waves.js';
 // [local-patch 2026-10-22] 超限模拟：R16+ 无限波次与双 Boss 生成器、词条抉择的开闸判断（上游 0.3.1.1）
 import { isInfiniteBossRound, buildInfiniteNormalWave, buildInfiniteBossWave, capWaveKinds } from '../infiniteWaves.js';
 import { wantsTraitDraft } from './traitDraft.js';
-import { pairPlayers } from '../finalAssault.js';
+import { pairPlayers, bossPairSalt } from '../finalAssault.js';
 import { createRng, deriveSeed } from '../../sim/rng.js';
-import { botPickBand } from '../bot.js';
 import { OK, fail, DELAYS, BAND_TURN_SECONDS } from './common.js';
 
 /**
@@ -84,6 +83,8 @@ export class MatchPhases {
   enterBandDraft() {
     if (this.phase !== PHASE.INFO_CHECK) return;
     this.phase = PHASE.BAND_DRAFT;
+    // The opening is settled, so no reroll cooldown outlives this phase.
+    this._rerollStartAt.clear();
     let order = this.order.map((p) => p.playerId);
     if (!this.isSolo) this.rngDraft.shuffle(order);
     order = this.humansFirst(order);
@@ -165,11 +166,17 @@ export class MatchPhases {
       if (this.phase !== PHASE.BAND_DRAFT || token !== this._turnToken) return;
       const ps = this.players.get(this.draftTurn());
       if (!ps || !ps.botControlled) return;
-      // a strategy a teammate already took is not selectable (队友已选): the bot re-draws, else the first free one
-      let id = botPickBand(this, ps);
-      for (let k = 0; k < 8 && this.bandTaken(id, ps.playerId); k++) id = botPickBand(this, ps);
-      if (this.bandTaken(id, ps.playerId)) id = this.gd.bandIds().find((b) => !this.bandTaken(b, ps.playerId)) || id;
-      this._applyBand(ps, id, { dedupe: true });
+      const fallback = () => {
+        // a strategy a teammate already took is not selectable (队友已选): the bot re-draws, else the first free one
+        let id = this.bot.pickBand(this, ps);
+        for (let k = 0; k < 8 && this.bandTaken(id, ps.playerId); k++) id = this.bot.pickBand(this, ps);
+        if (this.bandTaken(id, ps.playerId)) id = this.gd.bandIds().find((b) => !this.bandTaken(b, ps.playerId)) || id;
+        this._applyBand(ps, id, { dedupe: true });
+      };
+      if (this.bot.decide?.(this, ps, { kind: 'band',
+        valid: () => this.phase === PHASE.BAND_DRAFT && token === this._turnToken,
+        complete: () => token !== this._turnToken || !!this.draft?.picks[ps.playerId], fallback })) return;
+      fallback();
     });
   }
 
@@ -325,6 +332,7 @@ export class MatchPhases {
     this.spSquads = null; // [local-patch 2026-10-21]
     this.wave = null;
     this.bossWaves = null;
+    this.bossPairsRound = null;
     const alive = this.alivePlayers();
     // the round's enemies (shared composition, generated now so the prep preview is exact). Planned BEFORE the players'
     // round start: its recompute() checks the board on the field the player deploys on this round (deployFieldOf reads
@@ -402,13 +410,21 @@ export class MatchPhases {
     }
   }
 
-  /** Stable per-match pairs and their templates, generated before the prep preview / board validation. */
+  /** The round's pairs and their templates, generated before the prep preview / board validation. */
   _planBossWaves() {
     const r = this.round;
-    const bossId = r === this.gd.hiddenRound && r !== this.gd.bossRound ? this.hiddenBossId : this.bossId;
-    // Pairing uses an independent seeded draw, consuming no shop, wave, draft or battle randomness.
-    const groups = pairPlayers(this.alivePlayers(), createRng(deriveSeed(this.seed, 'boss-pairs')), this.bossPairs);
+    const hidden = r === this.gd.hiddenRound && r !== this.gd.bossRound;
+    const bossId = hidden ? this.hiddenBossId : this.bossId;
+    // Pairing uses an independent seeded draw, consuming no shop, wave, draft or battle randomness. The Hidden Core
+    // draws its pairs and sides anew (GitHub #845: the official R15 of BV1VCXyBjEN1 p1 pairs 1-2 / 3-4 after an R14 of
+    // 1-4 / 2-3; DESIGN §37.27, superseding §32.12's kept partners) from a stream of its own, so the Final Assault's
+    // draw is unchanged; a player who changes half keeps the board (bossFieldPlacement mirrors it, the halves' deploy
+    // maps are identical). Only the round's first plan draws anew: a re-plan after a departure in its round start, 机变
+    // draft or prep (platform.js _quit) keeps the intact pairs and re-pairs the orphan, as the Final Assault does.
+    const fresh = hidden && this.bossPairsRound !== r;
+    const groups = pairPlayers(this.alivePlayers(), createRng(deriveSeed(this.seed, bossPairSalt(this.gd, r))), fresh ? null : this.bossPairs);
     this.bossPairs = groups.map(g => g.map(p => p.playerId));
+    this.bossPairsRound = r;
     this.bossWaves = groups.map((g) => ({
       players: g.map((p) => p.playerId),
       // [local-patch 2026-10-22] 超限 R16+ 的 Boss 轮走 buildInfiniteBossWave（按档位挑 Boss + 无限缩放 + 双 Boss）

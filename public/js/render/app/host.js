@@ -49,10 +49,12 @@ function makeData(src) {
     const c = look('chess', id);
     const b = backups();
     if (!c || !b) return null;
-    if (standIns.has(c)) return standIns.get(c);
+    // 上游 0.3.3：缓存要跟着备份表走 —— 切版本 / 换内容集之后 `backups` 换了一份，同一颗棋子的替身记录也变了
+    const cached = standIns.get(c);
+    if (cached?.backups === b) return cached.rec;
     let rec;
     try { rec = standInRecord(c, b); } catch { rec = null; }
-    standIns.set(c, rec);
+    standIns.set(c, { backups: b, rec });
     return rec;
   };
   // 0.2.0 自选编队: the composed 自选 record of a DIY slot filled with a pick (shared/diy.js over chess.json + backups.json)
@@ -64,12 +66,14 @@ function makeData(src) {
     const c = look('chess', id);
     const b = backups();
     if (!c || !c.isDiy || !b || !pick || typeof pick.charId !== 'string') return null;
+    const chess = chessMap();
     const key = `${id}|${pick.charId}|${pick.skillIndex ?? ''}|${pick.uniEquipId ?? ''}`;
-    if (diys.has(key)) return diys.get(key);
+    const cached = diys.get(key);
+    if (cached?.chess === chess && cached?.backups === b) return cached.rec;
     let rec;
-    try { rec = diyRecordOf(c, pick, { chess: chessMap(), backups: b }); } catch { rec = null; }
+    try { rec = diyRecordOf(c, pick, { chess, backups: b }); } catch { rec = null; }
     if (rec && b.units?.[pick.charId]?.fx) rec = { ...rec, fx: b.units[pick.charId].fx };
-    diys.set(key, rec);
+    diys.set(key, { chess, backups: b, rec });
     return rec;
   };
   return {

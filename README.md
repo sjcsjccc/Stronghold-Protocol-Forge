@@ -2,7 +2,7 @@
 
 《明日方舟》季节性自走棋塔防玩法「卫戍协议：盟约」的**非官方同人复刻**：浏览器即开即玩，单人或 1–4 人联机合作。
 
-![version](https://img.shields.io/badge/version-0.19.1-2ea44f)
+![version](https://img.shields.io/badge/version-0.21.0-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)
 ![node](https://img.shields.io/badge/node-22%20%7C%2024-339933)
 
@@ -374,20 +374,7 @@ npm run editor                                                                  
 
 - **独立模拟**（单人）与**同盟模拟**（1–4 人**合作**，没有 PvP；空位可以加 AI 队友）。
 - 服务器是一个 Node.js 程序，**战斗在各玩家的浏览器里模拟**（和官方一样），服务器只管经济与回合，一台低功耗小主机就能开服。
-- **本仓库打包的上游游戏本体为 0.3.0**（本仓库自己的版本是 0.19.1，两者的读法见[版本号怎么读](#版本号怎么读)）：0.2.0 带来补位、自选编队、中英日韩四语言、自定义快捷键与精简包；0.2.1 把联防改回在本回合的战场上打（0.2.0 那张空马路是所有波次模板共用的占位地图）、装备栏满时再装一次性道具会弹「替换装备」窗，并修掉凋亡扣技力、频次器物、飞行敌人高度、盟约栏与详情卡等一批问题；**0.2.2 把干员的潜能与练度改成按干员、按玩家在运行时设置**（缺省满潜，比 0.2.1 一律满潜的数值再高约 10 %）、新增**日文语音**与本机**统计页**、补上装置说明卡与详情卡攻击范围等界面项，并把协议里 `loadout.ops`、`b.progress` 的 `resolved` / `leaksBy` 等字段补齐，详见 [CHANGELOG.md](CHANGELOG.md) 与 [docs/history/0.2.2.md](docs/history/0.2.2.md)。**0.2.3**：新增六星干员**克莱门莎**（三个技能、两项天赋）、**黍「好时节」与乌尔比安「前路」模组**、**四档界面文字大小**、**逐干员配音语言**、**添加到桌面**、**开局重随**与**恢复本机对局**，详见 [docs/history/0.2.3.md](docs/history/0.2.3.md)。**0.2.4 再抬一级**：按官方补齐**共享卡池与全队共享的装备库存**（同盟为单人的 2 倍，部分特殊装备例外；普通 / 进阶装备分别占 1 / 2 份，商店展示不占份数，消耗、销毁、出售和淘汰都归还份数），修正突袭成员复活后的重新选敌，以及联机首领 / 隐秘首领战中突袭可以跳到空半场的正常部署格（#475），并修正克莱门莎二技能溅射、浊心斯卡蒂与坚守的伤害分摊、哈洛德二技能的元素损伤判定、涤火杰西卡盾牌的相邻四格、家族徽章解除隐匿后的首笔伤害、松果二技能的逐次部署成长，日语界面改用官方日服用语，详见 [CHANGELOG.md](CHANGELOG.md) 与 [docs/history/0.2.4.md](docs/history/0.2.4.md)。**0.2.5 再抬一级**：**驭械术师的浮游拆成本体一击 + 未释放浮游的附加伤害**（洛洛二技能在目标离开攻击范围后继续锁定）、受击格改用官方**四舍六入五成双**并把被挡在场地边缘的敌人按在边线内侧那一格、新增**官方伤害数字**（默认关闭）、**盟约叠层提示音**、**每局随机的首领配对**与按团队权益保留的 Touch 外勤医疗，并让**固定赠品不再被共享库存阻断**，详见 [CHANGELOG.md](CHANGELOG.md) 与 [docs/history/0.2.5.md](docs/history/0.2.5.md)。**0.2.6 再抬一级**：**减轻开服电脑的流量**（静音时不下载背景音乐、1 KB 以上的 WebSocket 消息压缩、素材地址带内容哈希长期缓存、brotli 压缩、教程图改用 WebP、`/healthz?traffic=1` 与诊断里的下载量）、**官方场景光照改回官方值**（显示官方场景时不再明显偏暗）、显示官方场景时**补画射击台 / 特制水上平台 / 封印的地面**、最后一个还没选策略的玩家**不再看到可点的「跳过」**、**每回合开始按部署顺序重播入场动画与落地音**、设置新增**「弹药数量」**（默认关闭），并修掉单位多时模型被裁切与残留错位像素（#557 / #549 / #569 / #546 / #416 / #552 / #542），详见 [CHANGELOG.md](CHANGELOG.md) 与 [docs/history/0.2.6.md](docs/history/0.2.6.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
-- **多语言配音**（0.7.1 起）：干员战斗语音有中文 / 日文 / 英文 / 韩文四种，**设置 → 配音语言** 选全局默认，
-  任何干员还能在 **干员详情 → 配音** 里单独换一种（点一下当场试听）。某种配音缺一句时自动退回默认配音。
-  **发行包只带默认配音**（**0.9.0 起是日文**），其余三种在同一个 release 的 `…-voices-*.zip` 里（解压覆盖到 `app/public/assets/audio/voice/` 即可，不用改配置）。
-  **工坊包也能逐语种配音**（0.7.3 起，`pack.json.voiceLangs`）：选了哪种语言就听这个包的那一份，缺这一句时退回默认配音，
-  见 [docs/WORKSHOP.md](docs/WORKSHOP.md) §1.4。
-
-下面是给作者做参照的游戏画面。
-
-| 同盟房间 | 策略轮选 | 休整期（商店 / 盟约） |
-|---|---|---|
-| ![房间](docs/img/room.jpg) | ![策略](docs/img/band-draft.jpg) | ![休整期](docs/img/prep.jpg) |
-| **部署方向轮盘** | **作战** | **最终攻势** |
-| ![方向](docs/img/facing-wheel.jpg) | ![作战](docs/img/combat.jpg) | ![最终攻势](docs/img/final-assault.jpg) |
+- 当前版本 0.21.0（上游 v0.3.3）：默认提供四个官方版本切换，补齐早期版本规则、干员技能与头像／模型／特效；重做战斗伤判结算并修复首领技能节奏，更新大厅、等待室、调配与开场界面，增加界面大小、观战者接替 AI 等设置，并补齐社区反馈、插件与开服稳定性修复，详见 [CHANGELOG.md](CHANGELOG.md)。仍有少数规则按推断实现，与官方不一致的地方欢迎在 Issue 里反馈。
 
 ### 功能一览
 
@@ -395,11 +382,7 @@ npm run editor                                                                  
 - **4 种难度**：标准 / 险境 / 绝境 / 终极，独立与同盟各一套参数，均取自官方数据。
 - **休整期**：招募、刷新、冻结、升级调度中心；整备区与临时整备区；从整备区拖到棋盘部署，用**方向轮盘**选择朝向。同盟模拟的卡池共用。
 - **晋升精锐**：3 名同名干员自动合成精锐，并获得一次高一阶的免费招募。
-- **干员与调配**：112 名可招募干员（+ 精锐）及其技能、天赋和特质；开局前可以为每名干员选择携带的技能（283 个技能全部手工实现）和精锐的模组。
-- **补位（0.2.0）**：在「干员调配」标出自己没有的干员，开局后这些干员由官方的**补位干员**上场（8 名预备干员，以及郁金香、Sharp、Mechanist、Stormeye、Pith、Touch、Raidian、Misery、领主·Sharp），盟约、特质、阶级、价格与合成都仍按原干员；商店、手牌、棋盘与详情卡上带一个「替补」标记，作战中用自己的语音。
-- **自选编队（0.2.0）**：5 阶、6 阶各选 2 名自己拥有的 6★（71 名可选，三个技能任选、精锐可选模组），调度中心升到 5 / 6 级后这些干员只出现在你自己的商店里（每人单独的库存，不进公共卡池），带召唤物的干员放下后召唤物按官方数量进手牌。
-- **多语言（0.2.0）**：标题页与「设置」里切换中文 / English / 日本語 / 한국어 / 繁體中文；干员、技能、敌人、盟约等游戏文本用各服官方数据，界面译文另有语言包机制（`packs/<lang>/`，[docs/I18N.md](docs/I18N.md)）。
-- **自定义快捷键（0.2.0）**：「设置 → 快捷键」里改刷新、冻结、升级、撤退、出售与准备就绪的按键，冲突时两者互换，可恢复默认。
+- **干员与调配**：112 名可招募干员（+ 精锐）及其技能、天赋和特质；开局前可以为每名干员选择携带的技能（283 个技能全部手工实现）和精锐的模组，调配页也可以换成活动「物资调配处」那样的卡片视图。
 - **盟约与层数**：23 个盟约（8 个势力核心盟约 + 附加盟约），层数整局保留，每个盟约最多 999 层。
 - **装备与机变**：装备与法术，同名装备合成、特定组合赋予盟约效果；已配发的装备锁定在干员身上。部分回合开始前有机变选卡（装备、资金、干员、层数、悬赏等）。
 - **自动作战**：技能按官方「技能策略」自动释放；按接触半径阻挡，阻挡者倒下时由接触的干员接替；元素损伤与元素爆发；召唤物由玩家手动摆放；推开 / 拉拽按力度与重量计算；被击倒的干员留在原地显示再部署倒计时。
@@ -410,11 +393,7 @@ npm run editor                                                                  
 - **断线重连**：同盟模拟断线后 10 分钟内重新打开页面即可回到原座位，掉线期间按原阵容自动作战，也可以「暂离」交给 AI 托管；独立模拟 24 小时内可以回来继续（同一个浏览器）。
 - **交互细节**：漏怪时顶栏的目标生命值实时减少（结算时确定）；点选、拖放和配发装备都按地上的方格；购买、升级和机变选卡都需要点两次确认；只有一名玩家时除作战外不计时。
 - **画面与声音**：真实 Spine 小人、官方 BGM 与音效、表情（6 套 × 6 个）、作战特效；可选的官方 3D 棋盘（需要从本机客户端提取贴图）。
-- **手机与电脑**：触摸拖拽、长按查看详情，推荐横屏；设置里可以调低画质。
-
-### 快速开始（游戏）
-
-发行页上的两个包对应下面两种方式，按需选一个即可。
+- **手机与电脑**：触摸拖拽、长按查看详情，推荐横屏；设置里可以调低画质；界面被挖孔、刘海或曲面边缘挡住时可以用「异形屏适配」调整四边，界面偏大时可以在同一栏调小「界面大小」。
 
 #### 方式一：零安装整合包（Windows x64，推荐）
 
@@ -443,11 +422,10 @@ npm run setup      # 检查环境，并从公开镜像下载约 550 MB 美术 / 
 npm start          # 启动服务器：http://localhost:3000
 ```
 
-也可以直接运行启动脚本（Windows `scripts\start-windows.bat`，macOS / Linux `scripts/start.sh`）：首次会自动安装依赖、下载素材，然后启动服务器并打开浏览器。
+也可以直接运行启动脚本（Windows `scripts\start-windows.bat`，macOS / Linux `scripts/start.sh`）：首次会自动安装依赖、下载素材，然后启动服务器并打开浏览器。四个官方版本默认都开着，大厅右上角有「版本」。启动脚本和 `npm start` 不用加参数。只开第二期下半时设置 `SP_VERSIONS=act2autochess`（大厅不显示版本按钮），详见 [docs/DEPLOY.md](docs/DEPLOY.md) §11。
 
-- **本地客户端素材（可选）**：官方 3D 棋盘、部分官方界面图标（交流按钮与表情面板的边框、模组类型图标等）和灼热 / 炽焰源石虫的官方模型需要从本机的《明日方舟》PC 客户端提取（Windows 原生客户端、macOS 的 CrossOver 或 PlayCover）。`npm run setup` 检测到客户端时会询问是否提取（需要 Python 3.8+，依赖装在项目内的 `.venv-extract`，不影响系统）；之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<…/StreamingAssets/AB/Windows>"` 指定路径。没有客户端时游戏照常运行，这几样换成替代样式：2D 棋盘、样式相近的图标、染色的普通源石虫。表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载，不需要客户端。没有客户端的服务器（例如 Linux VPS）也可以从**同一版本**的整合包里复制 `public/assets/local/` 和 `data/local-assets.json`，见 [docs/DEPLOY.md](docs/DEPLOY.md) 的「本地客户端素材」。
-- **素材下载优先使用 GitHub**，失败时自动改用 jsDelivr 镜像。
-- **干员语音台词（可选，默认关闭）**：`node tools/fetch-assets.mjs --voices` 额外下载**约 46 MB** 的角色语音（实测 1848 个文件，120/138 名干员有战斗台词），装好后在「设置 → 干员语音」调高音量即可。**不加这个开关时一切照旧**：不下载、不写进清单、客户端也不请求。细节（槽位、`#` 文件名、URL 编码）见 [docs/ASSETS.md](docs/ASSETS.md) 的「Voice lines」；**工坊包自带的语音**（助战干员的配音）走同一条链路，见 [docs/WORKSHOP.md](docs/WORKSHOP.md) §1.4。
+- **本地客户端素材（可选）**：官方 3D 棋盘、官方战斗特效（0.3.0「官方特效」）、部分官方界面图标（交流按钮与表情面板的边框、模组类型图标等）、灼热 / 炽焰源石虫和 39 个召唤物（多数自选召唤物）的官方模型需要从本机的《明日方舟》PC 客户端提取（Windows 原生客户端、macOS 的 CrossOver 或 PlayCover）。`npm run setup` 检测到客户端时会询问是否提取（需要 Python 3.8+，依赖装在项目内的 `.venv-extract`，不影响系统）；之后可以用 `node tools/setup.mjs --local` 重新提取，或用 `--game "<安装目录或 …/StreamingAssets/AB/Windows>"` 指定路径。没有客户端时游戏照常运行，这几样换成替代样式：2D 棋盘、样式相近的图标、染色的普通源石虫、召唤物头像。表情和「玩法说明」的教程图随上面的素材一起从公开镜像下载，不需要客户端。没有客户端的服务器（例如 Linux VPS）也可以从**同一版本**的整合包（完整包；精简包没有）里复制 `public/assets/local/` 和 `data/local-assets.json`，见 [docs/DEPLOY.md](docs/DEPLOY.md) 的「本地客户端素材」。
+- 素材下载优先使用 GitHub，失败时自动改用 jsDelivr 镜像。
 - `npm run doctor`（即 `node tools/doctor.mjs`）可以随时诊断：Node 版本、素材是否完整、端口占用、局域网地址和防火墙。
 
 #### 本地美术 `public/assets/local/**`：官方素材、只在本地、不随源码分发
@@ -476,8 +454,8 @@ npm start          # 启动服务器：http://localhost:3000
 
 | 常量 | 今天是 | 读法 |
 |---|---|---|
-| `APP_VERSION` | `'0.19.1'`（`:34`） | 本仓库自己的版本，**必须是三段普通 semver**。资源 SW 的缓存名认它（`public/js/resources/common.js CACHE_NAME`），所以**抬它本身就是「换版即换缓存名」** |
-| `UPSTREAM_VERSION` | `'0.3.0'`（`:46`） | 上游那一半；与 `docs/history/` 的最新一节必须**一起动**（`test/docs-consistency.test.js` 的「UPSTREAM_VERSION matches the newest docs/history section」钉住了这条） |
+| `APP_VERSION` | `'0.20.0'`（`:34`） | 本仓库自己的版本，**必须是三段普通 semver**。资源 SW 的缓存名认它（`public/js/resources/common.js CACHE_NAME`），所以**抬它本身就是「换版即换缓存名」** |
+| `UPSTREAM_VERSION` | `'0.3.3'`（`:46`） | 上游那一半；与 `docs/history/` 的最新一节必须**一起动**（`test/docs-consistency.test.js` 的「UPSTREAM_VERSION matches the newest docs/history section」钉住了这条） |
 | `PROTOCOL_VERSION` | `2`（`:16`） | WebSocket 线上格式的版本，**不是**给包用的 |
 | `MOD_API_VERSION` | `1`（`:30`） | **包只需要认这一个**：`pack.json.api` 的 `">=1 <2"` 就是与它比对 |
 
@@ -495,7 +473,7 @@ npm start          # 启动服务器：http://localhost:3000
 
 #### 端口与配置
 
-默认监听 **TCP 3000**。换端口：启动脚本加 `--port 3001`，或设置环境变量 `PORT`。
+默认监听 **TCP 3000**。换端口：启动脚本加 `--port 3001`，或设置环境变量 `PORT`。固定私服的同盟密钥：启动脚本加 `--room-code ARK1`（或 `npm start -- --room-code ARK1`），只对本次启动的服务器实例生效；下次不带参数就恢复随机。
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
@@ -508,7 +486,11 @@ npm start          # 启动服务器：http://localhost:3000
 | `DEBUG` | 空 | 设为任意值输出详细日志 |
 | `SP_NO_BROWSER` | 空 | 设为 `1` 时启动脚本不自动打开浏览器 |
 | `SP_BOT_EMOTES` | 空 | AI 队友的对局表情回应（战斗、整备、合成、联防、收礼时即刻的 `m.emote` 广播）；设为 `0` 时整体关闭 |
-| `SP_MAX_SEATS` | `20` | **一间同盟房最多几张座位卡**（房主滑杆的上限）。缺省 20；空值 / 写错 / 小于 1 回落 20，小数向下取整。设成 `4` 回到官方那一档（帧与从前逐字节相同）。抬更多座时通常要同时抬 `startServer({ maxConnectionsPerAddr })`——它**不是**环境变量（注释里的 `SP_MAX_CONNS_PER_ADDR` 并不存在）；细节见 [docs/NET-TUNING.md](docs/NET-TUNING.md) §2.3 |
+| `SP_ASSET_INDEX` | 空 | 素材地址带内容哈希、浏览器长期缓存（0.2.6 起默认开启，哈希存在 `.cache/asset-hashes.json`）；设为 `0` 时关闭，素材清单原样下发 |
+| `SP_VERSIONS` | 不设（四个官方版本都开，默认第二期下半） | 收窄启用的版本：不设置与 `all` 相同；`act2autochess` 只开第二期下半，大厅不显示「版本」；也可写逗号分隔的版本 id（如 `act1autochess,act2autochess@V2_1`）。`SP_VERSION_DEFAULT` 指定默认版本，`SP_MAX_VERSION_HOSTS` 限制版本模拟进程数（空闲时不额外启动进程）。详见 [DEPLOY.md](docs/DEPLOY.md) §11 |
+| `SP_BOT_STRATEGY` / `SP_EXTERNAL_AI_*` / `SP_LLM_*` | 不设（内置 AI） | 外部 AI 与顾问模式目前只在开发分支上。发布包和 Docker 镜像会忽略这些变量，仍用内置 AI，并打一行日志。详见 [DEPLOY.md](docs/DEPLOY.md) |
+
+`--room-code` 只接受 4 位字母或数字，不是环境变量，也不会跨重启保留；同一时间只能有一个使用该密钥的房间。固定密钥更容易被猜到，建议只在私服 / 局域网使用。
 
 设置方式：macOS / Linux `PORT=8080 npm start`；PowerShell `$env:PORT=8080; npm start`；cmd `set "PORT=8080" && npm start`。健康检查：`GET /healthz`。
 座位上限同理：`SP_MAX_SEATS=40 npm start`（PowerShell：`$env:SP_MAX_SEATS = 40; npm start`）。
@@ -526,7 +508,7 @@ npm start          # 启动服务器：http://localhost:3000
 
 #### 和朋友一起玩（局域网）
 
-1. 打开页面 → 输入昵称 → **同盟模拟** → 创建房间。房主选择难度，可以添加 / 移除 AI 队友；开始前也可以把其他博士移出房间（对方可凭密钥重新加入）。
+1. 打开页面 → 输入昵称 → **同盟模拟** →「创建同盟」，直接建好房间（和活动的「联合模拟」一样，难度沿用上次选的）。房主在房间里点底部的难度改难度，可以添加 / 移除 AI 队友；开始前也可以把其他博士移出房间（对方可凭密钥重新加入）。
 2. 把 4 位字母的**同盟密钥**，或「复制链接」得到的 `http://<地址>:3000/?room=密钥` 发给朋友。
 3. 所有人点「准备就绪」后房主开始。
 4. 同一 Wi-Fi / 路由器下的朋友打开启动窗口里列出的地址（形如 `http://192.168.x.x:3000`）即可。打不开时多半是防火墙：Windows 首次启动时在弹窗中允许「专用网络」，或运行 `npm run doctor` 查看具体命令；访客 Wi-Fi 常开启「AP 隔离」，也会导致连不上。
@@ -560,12 +542,14 @@ npm start          # 启动服务器：http://localhost:3000
 | 出售 / 撤退 / 销毁装备 | 点击单位所在的格子 → 底部按钮「出售 +1」「撤退」；也可以把棋盘上的干员拖回整备区撤退。整备区里的装备与法术只能「销毁」，已配发的装备锁定在干员身上（干员出售或合成精锐时退回整备区） |
 | 装备 | 把装备拖到干员所在的格子上（每人 2 件；满了会弹出替换窗口，被替换的一件会被销毁）；法术拖到地块上并选方向 |
 | 查看详情 | 右键或长按单位 / 卡牌（属性为实时数值，高于基础值为绿色、低于为红色） |
-| 快捷键 | `R` 刷新 · `F` 冻结 · `D` 升级 · `Space` 准备就绪 · `Esc` 取消 / 关闭 |
+| 快捷键 | `W` 购买鼠标指向的商品（无需点击） · `R` 刷新 · `F` 冻结 · `D` 升级 · `Q` 撤退 / `X` 出售干员（选中优先，否则操作鼠标指向的干员） · `Space` 准备就绪 · `Esc` 取消 / 关闭；除 `Esc` 外都可以在「设置 → 快捷键」里改成别的键（[玩法指南 §11](docs/PLAYING.md#11-快捷键)） |
 | 方向轮盘键盘操作 | 方向键预览 · `Enter` 确认 · `Esc` 取消 |
 | 暂停（独立模拟） | 作战中（含最终攻势 / 隐秘核心）点顶栏的「暂停」或按 `Space`，再点「继续作战」（或 `Space`）继续；同盟模拟的作战不能暂停 |
 | 表情 | 左下角「交流」，左右滑动（或方向键）换主题，冷却 1 秒 |
-| 观战 | 自己的作战结束后（或休整期）点左侧队友头像 →「前往查看」；不参战的朋友可以在大厅输入同盟密钥点「观战」（每个同盟最多 2 名观战者，本作新增） |
-| 统计（本机） | 标题画面右上角、大厅、等待室的「统计」：胜率、策略通过率、称号、战斗累计和对局记录（点一行回看结算页）；只存在本机浏览器里，可以导出 / 导入，没清完第一个回合就退出的对局不计入统计（[玩法指南 §12](docs/PLAYING.md#13-统计本机)） |
+| 大厅背景与音乐 | 大厅左上角的图片按钮：四种生成的大厅场景（夜巡 / 霜原 / 烬野 / 静默），或自己的图片 / 视频背景（可调暗度），以及大厅音乐；文件只保存在本机浏览器，不上传，队友看不到 |
+| 观战 | 自己的作战结束后（或休整期）点左侧队友头像 →「前往查看」；不参战的朋友可以在大厅点「同盟模拟」、输入同盟密钥后点「观战」（每个同盟最多 2 名观战者，本作新增） |
+| 统计（本机） | 标题画面右上角、等待室的「统计」，大厅左上角「成就统计」窗口里的「查看完整统计」：胜率、策略通过率、称号、战斗累计和对局记录（点一行回看结算页）；只存在本机浏览器里，可以导出 / 导入，没清完第一个回合就退出的对局不计入统计（[玩法指南 §13](docs/PLAYING.md#13-统计本机)） |
+| 名片干员 | 等待室里点自己席位卡上的「更换立绘」选一名干员，同盟里的博士都会看到它的立绘；「默认」按博士编号自动分配 |
 
 完整的规则、数值和小技巧见 **[docs/PLAYING.md](docs/PLAYING.md)**（游戏内左下角也有「玩法说明」）。
 
@@ -706,7 +690,7 @@ work for direct profit.
 |---|---|
 | 上游项目 | **Stronghold-Protocol**（卫戍协议：盟约 · 非官方同人复刻） |
 | 上游地址 | <https://github.com/sganggs/Stronghold-Protocol> |
-| 本仓库当前的底座 | 上游 **v0.3.1** 的源码树（tag `v0.3.1` = commit `b3deebda`）。本版把底座从 v0.3.0（tag `v0.3.0` = commit `c24e17ee`）抬到 v0.3.1；此前把底座从 v0.2.6（tag `v0.2.6` = commit `488db49`）抬到 v0.3.0；0.14.0 曾把底座从 v0.2.2（commit `62eb113`）经 v0.2.3（commit `1db8e51`）抬到 v0.2.4；0.10.0 把底座从 v0.2.1（commit `c2a2ef7`）抬到 v0.2.2（含增量包没带上的开发侧改动）；0.8.2 把底座从 v0.2.0（commit `1303321`）抬到 v0.2.1；0.7.0 起按上游 tag 逐文件移植；此前的 0.1.x–0.6.x 基于上游 **v0.1.3** 的 Release 整合包（解压得到，不是 `git clone`）。 |
+| 本仓库当前的底座 | 上游 **v0.3.3** 的源码树（tag `upstream-v0.3.3` = commit `f07b8965`，发布 2026-10-25，热修复 6 个提交 / 38 个文件）。上一版是 v0.3.1（tag `v0.3.1` = commit `b3deebda`）；0.20.0 这次把底座抬到 v0.3.2 —— 官方版本切换、伤害结算顺序、攻击类技能占回合等规则改动都跟着进来，本仓库自己的功能（聊天、座位上限、工坊模组集合、助战、野排）逐条保留 |
 | 改动时间 | 2026 年 10 月起，逐次提交见 `git log` 的提交日期 |
 | 许可 | 整体 **GPL-3.0-or-later**，全文见 [LICENSE](LICENSE)；上游的版权与许可声明原样保留（[NOTICE.md](NOTICE.md)、[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)） |
 
@@ -748,7 +732,7 @@ work for direct profit.
 ### B. 本项目修改的上游文件（0.10.0 口径：相对上游 v0.2.2）
 
 > ⚠️ **A / B 两节与上面的 A/B/C 分类表都是 0.10.0 那次移植的「口径快照」**（依据写的是上游 **v0.2.2**）。
-> 本仓库**当前的底座已经是上游 v0.3.1**（见本节开头的「本仓库当前的底座」那一行），0.14.0 那次抬底座
+> 本仓库**当前的底座已经是上游 v0.3.3**（见本节开头的「本仓库当前的底座」那一行），0.14.0 那次抬底座
 > **没有**重做这份逐字节归属分析 ⇒ 读 A / B 时请把它们当作 **0.10.0 时点**的结论，不要当成「当前就是 v0.2.2」。
 > 按 v0.2.4 重算这份归属，是一件独立的事。
 
@@ -803,7 +787,7 @@ This repository is **Stronghold-Protocol-Forge**. It holds three things: the **F
 - **The Forge editor (what this repo is for):** run `npm run editor` and open <http://127.0.0.1:3311> — no build step, no game-server change, bound to loopback by default. Nine pages author operators (`/`), maps (`/stage.html`, 19×21 grid with 2D placement and a 3D preview), enemies (`/enemy.html`), spawn waves (`/wave.html`), items (`/item.html`), bonds (`/bond.html`: add a bond, or override one of the official 23), behaviour-layer kits (`/kit.html`), a pack's voice lines (`/voice.html`) and the pack itself (`/pack.html`: export to a `.zip`, import someone else's, tick which of the pack's own operators enter the 助战 pool, and start a playtest server that opens straight into a solo run). Mechanical fields are always derived from the real engine rather than typed by hand, and `tools/workshop-validate.mjs` re-checks every pack in layers (format → semantics → the real engine → kits / maps / enemies / waves / items / voice lines / 助战) through the same `shared/*Authoring.js` rules the editor and CLI use, so the rules cannot drift. Saved Options carry a `_meta` attribution block. See [docs/EDITOR.md](docs/EDITOR.md) and [docs/WORKSHOP.md](docs/WORKSHOP.md).
 - **What a pack can touch today** (every number below is measured on this tree): `pack.json` is a **closed set of 36 top-level keys** — an unknown key is refused by name, never read past. A pack can declare content and overrides of official records (`content` / `overrides`); mount a panel into any of **9 client slots** (`client.panels`, with `screen.game.shopCard` a *repeatable* host — one container per shop card, and the panel tells them apart through `ctx.hostKey`); rewrite one of **4 engine components** (`wraps`, mode `wrap` or `replace`, falling back to the engine's own render and naming itself once if it throws); run server code through **6 module uses** (`boot` / `shutdown` / `matchClass` / `healthz` / `metrics` / `route`); talk to its own panel over **pack channels** (`messages`; the one message-driven call site is `Match.handlePackMsg`, and the server-side declaration surface is `server.modules[].channels` — at most 8 per module, each one also declared by a panel, `matchClass` required as the receiver, §28.23); declare **`enabled: false`** to install a pack without letting it take part (boolean only; `true` is byte-for-byte the same as omitting it, `false` lands in the loader's `errors` as `ENABLED_FALSE` and is named, never silently skipped — §28.50); pick one of **3 variant axes** (`training` / `form` / `deploy`); declare one of the **4 rule switches in `behaviour`** (`shopBias` / `prepLoadout` / `morphPairing` / `unequip` — each one changes the match outcome, so `combat: true` is a hard gate, and `behaviour` is **not** a contribution); make a **trait grant bonds** by writing `trait.grantsBonds` on a `chess` record (an unknown bond id is named but the pack is **not** refused — design §28.49); name **another host** with `target` (`forge` default / `stardust`, a declaration-only pack this engine recognises but does not load, reported **by name on three surfaces** — §28.46); declare **`dependencies` / `conflicts`** between packs, adjudicated **at load time** and always named (§28.48); serve its own container from its own CDN (`assets.mirrors` — a mirror whose `sha256` does not match is disabled **by name**, not rejected, and the server makes no network request for it); publish announcements (`notices`); expose data at an endpoint (`routes`); ship voices, icons, art and forms; and have the client rebuild the pack hash file by file from `GET /mods/catalog.json` using the **same digest the server uses**, hashing every byte before it is written. **Host lanes** (`startServer({ wsLanes, httpLanes })`, §28.44/§28.45) are a **host-only** capability: they are function arguments, not `pack.json` fields, so a pack that writes them is refused with `PACK_UNKNOWN_FIELD`. And the **mod registry** (`<stateRoot>/mod-registry.json`, §28.47) is the manager's ledger — `enable` / `disable` / `uninstall` / `rollback` from the CLI, where *disabled ≠ uninstalled* and *uninstalled ≠ deleted* (the directory is moved into `.mod-backups/`, never removed). See [docs/MOD-SURFACE.md](docs/MOD-SURFACE.md).
 - **From a `pack.json` to someone else running it:** the chain is the standard-pack spec ([docs/STANDARD-PACK.md](docs/STANDARD-PACK.md) — seven submission forms and what counts as a standard pack), the mod repository ([Stronghold-Protocol-Forge-Mods](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods), whose `mods/index.json` is its single source of truth) and the upload site (`site/`). A minimal pack is one `pack.json` with no code and no art: `node tools/workshop-validate.mjs workshop` prints `0 error(s), 0 warning(s)` for the one in [一份最小 pack.json](#一份最小-packjson实测能装).
-- **The bundled game:** an **unofficial, non-commercial fan remake** played in the browser: solo, or 1–4 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host. The bundled upstream game is **0.3.1** (this repo's own version is **0.19.1**; the release tag spells both halves, `v0.19.1-0.3.1`): it adds stand-ins for operators you do not own (补位), a custom squad (自选编队), Chinese / English / Japanese / Korean / Traditional Chinese, configurable hotkeys and a ~22 MB lite bundle, plus a batch of rule fixes checked against the official data and PRTS; 0.2.2 makes an operator's potential and cultivation a per-operator, per-player runtime setting (full potential by default), adds the Japanese voice track and an on-device statistics page; **0.2.3** adds the six-star operator 克莱门莎 (three skills, two talents), the 黍「好时节」 and 乌尔比安「前路」 modules, a four-step interface text size, a per-operator dub language, add-to-home-screen, a pre-match reroll and resume-last-match, plus a batch of rule and interface fixes; **0.2.4** brings the official shared card pool and team-wide item stock (double for co-op, a few special items exempt; normal and advanced items take 1 and 2 shares, the shop display takes none, and consuming, destroying, selling or eliminating all return them), fixes the Raid reselect after a revive and lets Raid land on a normal deployable tile of an empty half in multiplayer boss / hidden-boss fights (#475), and corrects 克莱门莎's S2 splash, the damage sharing of 浊心斯卡蒂 with 坚守, 哈洛德 S2's elemental-injury check, the four adjacent tiles of 涤火杰西卡's shield, the family crest's first hit after stealth ends and 松果's per-deployment S2 growth, with the Japanese interface on the official client's wording — **0.2.5** splits the 驭械术师 drone into a body hit plus a separate ramped addition (洛洛 S2 keeps its lock outside her range, a redeploy resets the ramp), rounds hit tiles half to even and holds an enemy blocked at the field edge on the edge tile, adds the official damage numbers (off by default), the bond-layer cue, random boss partners and a Touch team medic that survives its holder, and stops the shared stock from blocking a fixed gift — **0.2.6** lightens what the hosting PC uploads (no BGM download while the music is silent, WebSocket messages from 1 KB compressed, content-hashed asset URLs with a year of caching, brotli, the tutorial pages as WebP, and `/healthz?traffic=1` plus a downloads line in the diagnostics), restores the official scene light values, draws the device slabs the official scenes lack, hides the strategy draft's skip button from the last player who has not picked, replays the prep Start animation and landing sound at the start of every round, adds the optional 设置「弹药数量」 (off by default) and fixes the cut-off models and stray impostor pixels of a crowded field (#557 / #549 / #569 / #546 / #416 / #552 / #542) — see [CHANGELOG.md](CHANGELOG.md). Download the all-in-one bundle from [Releases](../../releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From source: `npm install && npm run setup && npm start` (setup downloads ~550 MB of art from public mirrors, the emotes and the how-to-play pages included; the official 3D board, some official HUD icons, two enemy models and 39 summon models are extracted from a local Arknights client — without one the game uses the 2D board and look-alike stand-ins, and a server can copy `public/assets/local/` and `data/local-assets.json` from the release bundle of the same version). Create a co-op room and share the 4-letter key or the `?room=KEY` link; on a LAN use the address printed at start, otherwise a virtual-LAN tool, a tunnel or a VPS — see [docs/DEPLOY.md](docs/DEPLOY.md).
+- **The bundled game:** an **unofficial, non-commercial fan remake** played in the browser: solo, or 1–4 player co-op (AI teammates can fill seats). Combat is simulated in each player's browser, so a low-power PC can host. The bundled upstream game is **0.3.3** (this repo's own version is **0.21.0**; the release tag spells both halves, `v0.21.0-0.3.3`): it adds stand-ins for operators you do not own (补位), a custom squad (自选编队), Chinese / English / Japanese / Korean / Traditional Chinese, configurable hotkeys and a ~22 MB lite bundle, plus a batch of rule fixes checked against the official data and PRTS; 0.2.2 makes an operator's potential and cultivation a per-operator, per-player runtime setting (full potential by default), adds the Japanese voice track and an on-device statistics page; **0.2.3** adds the six-star operator 克莱门莎 (three skills, two talents), the 黍「好时节」 and 乌尔比安「前路」 modules, a four-step interface text size, a per-operator dub language, add-to-home-screen, a pre-match reroll and resume-last-match, plus a batch of rule and interface fixes; **0.2.4** brings the official shared card pool and team-wide item stock (double for co-op, a few special items exempt; normal and advanced items take 1 and 2 shares, the shop display takes none, and consuming, destroying, selling or eliminating all return them), fixes the Raid reselect after a revive and lets Raid land on a normal deployable tile of an empty half in multiplayer boss / hidden-boss fights (#475), and corrects 克莱门莎's S2 splash, the damage sharing of 浊心斯卡蒂 with 坚守, 哈洛德 S2's elemental-injury check, the four adjacent tiles of 涤火杰西卡's shield, the family crest's first hit after stealth ends and 松果's per-deployment S2 growth, with the Japanese interface on the official client's wording — **0.2.5** splits the 驭械术师 drone into a body hit plus a separate ramped addition (洛洛 S2 keeps its lock outside her range, a redeploy resets the ramp), rounds hit tiles half to even and holds an enemy blocked at the field edge on the edge tile, adds the official damage numbers (off by default), the bond-layer cue, random boss partners and a Touch team medic that survives its holder, and stops the shared stock from blocking a fixed gift — **0.2.6** lightens what the hosting PC uploads (no BGM download while the music is silent, WebSocket messages from 1 KB compressed, content-hashed asset URLs with a year of caching, brotli, the tutorial pages as WebP, and `/healthz?traffic=1` plus a downloads line in the diagnostics), restores the official scene light values, draws the device slabs the official scenes lack, hides the strategy draft's skip button from the last player who has not picked, replays the prep Start animation and landing sound at the start of every round, adds the optional 设置「弹药数量」 (off by default) and fixes the cut-off models and stray impostor pixels of a crowded field (#557 / #549 / #569 / #546 / #416 / #552 / #542) — see [CHANGELOG.md](CHANGELOG.md). Download the all-in-one bundle from [Releases](../../releases/latest), install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From source: `npm install && npm run setup && npm start` (setup downloads ~550 MB of art from public mirrors, the emotes and the how-to-play pages included; the official 3D board, some official HUD icons, two enemy models and 39 summon models are extracted from a local Arknights client — without one the game uses the 2D board and look-alike stand-ins, and a server can copy `public/assets/local/` and `data/local-assets.json` from the release bundle of the same version). Create a co-op room and share the 4-letter key or the `?room=KEY` link; on a LAN use the address printed at start, otherwise a virtual-LAN tool, a tunnel or a VPS — see [docs/DEPLOY.md](docs/DEPLOY.md).
 - **Run:** download the full bundle `Stronghold-Protocol-v<version>.zip` (~505 MB, all the art inside, the Chinese and Japanese operator voices included) from [Releases](../../releases/latest) — or the lite one, `…-lite.zip` (~22 MB), which downloads the art (~550 MB) on its first start; from 0.2.1 on, `…-update.zip` holds only the files changed since the earlier 0.2.x releases: stop the server, extract it over an existing 0.2.x folder and start again (the first start deletes the files the new version dropped and verifies the install) — install Node.js 22 or 24, then double-click `scripts\start-windows.bat` (Windows) or run `./scripts/start.sh` (macOS / Linux) and open <http://localhost:3000>. From source: `npm install && npm run setup && npm start` (setup downloads ~550 MB of art from public mirrors, the emotes and the how-to-play pages included; the official 3D board, some official HUD icons, two enemy models and 39 summon models are extracted from a local Arknights client — without one the game uses the 2D board and look-alike stand-ins (the summons show their avatars), and a server can copy `public/assets/local/` and `data/local-assets.json` from the full bundle of the same version).
 - **Languages:** Chinese (the default), English, 日本語, 한국어 and 繁體中文 — switch on the title screen or in Settings. Game texts come from the official clients; the Japanese, Korean and Traditional Chinese interface strings are machine translations (corrections welcome: [docs/I18N.md](docs/I18N.md)).
 - **Play with friends:** create a co-op room and share the 4-letter key or the `?room=KEY` link. On a LAN, use the address printed at start; otherwise use a virtual-LAN tool, a tunnel or a VPS — see [docs/DEPLOY.md](docs/DEPLOY.md).

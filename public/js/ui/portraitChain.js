@@ -81,6 +81,18 @@ const FIELDS = {
  *   `appearanceFirst` 与文件头的优先级那一段）。
  * @returns {string|null} URL，或 null
  */
+/** 皮肤那一套图（`chars[<id>].skins[<皮肤>]`）。与 `assetUrls.js` 的私有 `skinPicture` 逐字同一套判据。 */
+function skinPictureOf(m, chess, skinId, field) {
+  if (!skinId) return null;
+  const strOf = (v) => (typeof v === 'string' && v ? v : null);
+  const id = strOf(chess && chess.charId)
+    || strOf(chess && chess.assets ? chess.assets[field] : null)?.replace(/_[12]$/, '');
+  const skin = id ? m?.chars?.[id]?.skins?.[skinId] : null;
+  if (!skin) return null;
+  const elite = (chess && chess.isGolden) || /_2$/.test(strOf(chess && chess.assets ? chess.assets[field] : null) || '');
+  return strOf(elite && skin[`${field}E2`]) || strOf(skin[field]) || (field === 'portrait' ? strOf(skin.illust) : null);
+}
+
 export function portraitEntry(m, chess, opts = {}) {
   const kind = opts.kind === 'avatar' ? 'avatar' : 'portrait';
   const f = FIELDS[kind];
@@ -89,6 +101,10 @@ export function portraitEntry(m, chess, opts = {}) {
 
   const charId = strOf(chess && chess.charId);
   const id = strOf(chess && chess.assets ? chess.assets[kind] : null);
+  // 步骤 0.5（本仓库）：调用方点名了一套皮肤（`opts.skin`，来自「按座位选的外观」）——
+  // 皮肤的图挂在 `chars[<id>].skins[<皮肤>]` 上，所以这一支要在基础图之前。
+  const skinned = skinPictureOf(m, chess, opts.skin, kind);
+  if (skinned) return skinned;
   // 步骤 0：**提供者先说话**（只有开关打开、且提供者真的在、且调用方没有点名版本时才存在这一步）
   const first = appearanceFirst(charId, id, opts, kind, chess);
   if (first) return first;

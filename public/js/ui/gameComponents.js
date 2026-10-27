@@ -6,12 +6,16 @@ import { html, Icon, TierChip, Tooltip } from './components.js';
 import { data, useData, localAsset } from '../data.js';
 import { parseRichText, rtClassName } from './richText.js';
 import { t as tr } from '../../../shared/i18n.js';
+import { useStore } from '../store.js';
+import { skinsStore, ownerSkin } from './skins.js';
+import { settingsStore } from './settingsStore.js';
 import {
   uiUrl, itemIconUrl, tokenAvatarUrl, enemyIconUrl, bondIconUrl, bandIconUrl,
+  chessAvatarUrl, chessPortraitUrl,
 } from './assetUrls.js';
 // 头像统一走解析链（皮肤层）：`UnitThumb` 是结算页 / 队伍面板 / 手牌共用的小头像组件，
 // 所以接这一处就等于把「时装也影响小头像」这件事一次接对所有消费点。
-import { avatarUrlOf, currentAppearanceLookup } from './portraitChain.js';
+import { avatarUrlOf, portraitUrlOf, currentAppearanceLookup } from './portraitChain.js';
 
 const cx = (...p) => p.flat().filter(Boolean).join(' ');
 
@@ -27,8 +31,9 @@ export const GAME_FILES = ['config', 'assets', 'chess', 'bonds', 'items', 'bands
  */
 export function useGameData() {
   const ready = useData(...GAME_FILES);
-  // (config / factions / choices are read once per memo: a language switch reads them again in the new locale)
-  return useMemo(() => makeLookups(ready), [ready, data.locale()]);
+  // (config / factions / choices are read once per memo: a language switch reads them again in the new locale, a
+  // content switch — a version or a plugin set — from the new files)
+  return useMemo(() => makeLookups(ready), [ready, data.locale(), data.contentId()]);
 }
 
 /** A 自选 operator's summon record (data/backups.json `tokens`, 0.2.0), or null. */
@@ -71,9 +76,36 @@ export function Img({ src, class: cls, alt = '', fallback = null, style }) {
   return html`<img class=${cls} src=${src} alt=${alt} draggable=${false} loading="lazy" style=${style} onError=${() => setBad(src)} />`;
 }
 
+/** Owner-aware operator pictures, with live selection / settings updates even on an already open card.
+ * `ownerId` omitted = local picker; null = unowned catalogue art. Callers resolve stand-ins / DIY first.
+ * B6, maintainer option A (2026-10-18); docs/SKINS.md and §37.4. Model outfits retain their models.
+ */
+export function OperatorImage({ m, chess, ownerId, skin = null, portrait = false, avatarFallback = false,
+  portraitClass, avatarClass, ...props }) {
+  useData('assets');
+  m = data.get('assets') || m;
+  const localSkins = useStore((s) => s.skins, Object.is, skinsStore);
+  const otherSkins = useStore((s) => s.otherSkins, Object.is, settingsStore);
+  const selected = useStore((s) => ownerSkin(chess?.charId, { ownerId, skin, myId: s.me.playerId,
+    players: s.match.public?.players || [], localSkins, otherSkins }));
+  // 走**链上的简写**（与手牌 / 详情 / 结算同一个入口）：皮肤由链的第 0.5 步解析，
+  // 时装（外观提供者）由第 0 步解析 —— 直接调 chessPortraitUrl/chessAvatarUrl 会绕过两者。
+  const lookup = currentAppearanceLookup();
+  const art = portrait ? portraitUrlOf(m, chess, { lookup, skin: selected }) : null;
+  const src = art || (!portrait || avatarFallback ? avatarUrlOf(m, chess, { lookup, skin: selected }) : null);
+  return html`<${Img} ...${props} src=${src} class=${art ? portraitClass ?? props.class : avatarClass ?? props.class} />`;
+}
+
 /** Official UI sprite by 'group/key' with a fallback. */
 export function Sprite({ k, class: cls, fallback = null }) {
   return html`<${Img} src=${uiUrl(data.get('assets'), k)} class=${cx('sprite', cls)} fallback=${fallback} />`;
+}
+
+/** Official promotion phase from the resolved record's status (not its shop tier or normal / golden form). */
+export function PromotionIcon({ m, phase, class: cls }) {
+  if (!Number.isInteger(phase) || phase < 0 || phase > 2) return null;
+  return html`<${Img} src=${uiUrl(m, `elite/elite_${phase}`)} class=${cls}
+    fallback=${html`<small class=${cls}>E${phase}</small>`} />`;
 }
 
 /**
@@ -105,11 +137,11 @@ export const isGoldenPiece = (piece, chess) => !!(piece?.golden || chess?.isGold
 /**
  * Square unit thumbnail for a piece / chess / item / token / enemy: art + tier chip + elite frame.
  * @param {{ kind?: 'chess'|'item'|'token'|'enemy', id: string, golden?: boolean, size?: 'xs'|'sm'|'md'|'lg', tier?: number,
- *   showTier?: boolean, class?: string, dim?: boolean, badge?: any, title?: string, rec?: any }} props
+ *   showTier?: boolean, class?: string, dim?: boolean, badge?: any, title?: string, rec?: any, ownerId?: string|null, skin?: string|null }} props
  *   `rec`: the chess record to draw instead of the data's (a 自选 piece's composed record — 0.2.0, gameLogic/diy.js; a
  *   补位 stand-in's — gameLogic/standIn.js: drawn with a small 「替补」 mark in the corner)
  */
-export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showTier = true, class: cls, dim = false, badge = null, title, rec = null }) {
+export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showTier = true, class: cls, dim = false, badge = null, title, rec = null, ownerId, skin = null }) {
   const m = data.get('assets');
   let src = null;
   let name = '';
@@ -144,7 +176,9 @@ export function UnitThumb({ kind = 'chess', id, golden, size = 'md', tier, showT
   return html`<span class=${cx('uthumb', `uthumb--${size}`, `uthumb--${kind}`, golden && 'is-golden', dim && 'is-dim', t && `uthumb--t${Math.max(1, Math.min(6, t | 0))}`, cls)}
       title=${title ?? name}>
     <span class="uthumb__art">
-      <${Img} src=${src} fallback=${html`<span class="uthumb__glyph">${glyph}</span>`} />
+      ${kind === 'chess'
+        ? html`<${OperatorImage} m=${m} chess=${rec || data.lookup('chess', id)} ownerId=${ownerId} skin=${skin} fallback=${html`<span class="uthumb__glyph">${glyph}</span>`} />`
+        : html`<${Img} src=${src} fallback=${html`<span class="uthumb__glyph">${glyph}</span>`} />`}
     </span>
     ${showTier && t && kind !== 'enemy' && kind !== 'token' ? html`<${TierChip} tier=${t} golden=${golden} size="sm" class="uthumb__tier" />` : null}
     ${kind === 'token' ? html`<span class="uthumb__tag">${tr('召唤')}</span>` : null}

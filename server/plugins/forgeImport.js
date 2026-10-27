@@ -3208,7 +3208,7 @@ export async function importForge(source, opts = {}) {
     }
     const planOpts = { id: opts.id, contentId: primaryName || undefined, dataDir, vanilla, scripts, parse };
     let planned = planForgeImport(files, planOpts);
-    // Maintainer decision 2026-10-17 (§34.33): only explicit imports may download. The synchronous
+    // Maintainer decision 2026-10-17 (§36.33): only explicit imports may download. The synchronous
     // planner/loader remains local-only; use its actual derivation requests, not a scan of arbitrary pack strings.
     if (planned.meta.officialNeeded.length) {
       const prepared = await ensureOfficialTables(path.resolve(dataDir, '..'),

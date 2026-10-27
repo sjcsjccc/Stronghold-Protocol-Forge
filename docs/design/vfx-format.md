@@ -11,7 +11,7 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
   50 with the identity or a small turn about z (烛煌, 塑心, 焰尾 … and 19 enemies' and 2 tokens' points). A reader of an
   earlier index (no `rot` / `followRot`) takes the bone's angle for every bone-followed point and no turn for the others.
 * **2026-10-15 — corrections after the maintainer's play (history §34.14.38)**; no version changes — the files now
-  match what this text already said, and a reader of the earlier files keeps working. (1) Meshes (§35.9): a skinned
+  match what this text already said, and a reader of the earlier files keeps working. (1) Meshes (§37.9): a skinned
   mesh has four bone influences per vertex. A Unity 2019+ mesh stores 1–4 (its BlendIndices / BlendWeight channels'
   dimension) and no BlendWeight when every vertex follows one bone; earlier runs wrote those rows as they came — 2 per
   vertex for 21 skinned renderers of the used set (铃兰 S3's ninth tail, 琴柳's flags …), no bone data at all for 41
@@ -59,7 +59,7 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
   (one skill use changes: `SpawnTokenOnTileByIDAbility._buffsToExistToken`, unknown → token). (9) New effect fields:
   a funnel's `_idleEffect` / `_idleBackEffect` / `_overloadIdleEffect` (loop), `_appearEffect` (start), `_disappearEffect`
   (end); a reborn talent's `_effects` (start); `ExtraAbilityPreloads._effects` is no use (preloads only). Numbers: §35.17.
-* **2026-10-15 — Phase 1c: `index.json` version 2, meshes version 2** (§35.12, §35.9; the descriptors and
+* **2026-10-15 — Phase 1c: `index.json` version 2, meshes version 2** (§35.12, §37.9; the descriptors and
   `textures.json` stay version 1, the file list's `fx.index.version` is 2; no field was removed or renamed — a version-1
   reader keeps working and simply does not see the additions, except the two corrections (9) and (10)). (1) A mode's
   `attack` takes the rows of every effect emitter on its node, not only an exact `UberEffectEmitter`: its subclasses
@@ -83,7 +83,7 @@ Part of [DESIGN.md](../DESIGN.md) (the index; section numbers are global).
   transform — 90 skins change (78 enemies, 10 tokens, 2 operators: 88 roots authored tiles away, e.g. `enemy_1007_slime`
   at (3, 3, 0), and float noise), their points now sit over the feet; the runtime's `skinShift` (render/vfx/mounts.js),
   which moved 84 of them back, has nothing left to move for an index of version 2 and can go (or skip version ≥ 2). (10)
-  Corrected: a mesh's `colors` are 0…1 as §35.9 says (version 1 wrote the client's bytes, 0…255; a reader that divides
+  Corrected: a mesh's `colors` are 0…1 as §37.9 says (version 1 wrote the client's bytes, 0…255; a reader that divides
   values above 1 by 255 reads both); the mesh files are version 2, and their keys (a hash of the file) all change.
   Numbers: §35.15.
 * **2026-10-15 — Phase 1b, the full set.** (1) The file list left `data/local-assets.json`: it is `data/local-fx.json`
@@ -154,10 +154,10 @@ left out), caches the bundles' prefab lists under `.cache/fx/` (per bundle size 
 | file | content |
 |---|---|
 | `index.json` | §35.12: per unit (operator / enemy / token) the attack modes, skills, talents and common / general abilities (§35.17), projectiles and mount points; the projectiles; the generic keys; one summary per exported prefab |
-| `textures.json` | §35.8: texture key → size, wrap, filter, alpha, files |
-| `prefabs/<file>.json` | §35.4: one descriptor per effect prefab (effect key → file: `fx_file(key)` — the key itself when it is URL-safe (`[A-Za-z0-9_.-]`), else the safe form + `-` + the key's CRC32 in hex, e.g. `buff_ fragile_01` → `buff__fragile_01-9c1f…`) |
-| `tex/<key>.webp`, `tex/half/<key>.webp` | §35.8: every texture (WebP q90, alpha kept), and a half-size copy for the light tier (both sides ≥ 64 px) |
-| `mesh/<key>.json` | §35.9: meshes of mesh particles, MeshRenderers, skinned meshes and mesh-shaped emitters |
+| `textures.json` | §33.8: texture key → size, wrap, filter, alpha, files |
+| `prefabs/<file>.json` | §33.4: one descriptor per effect prefab (effect key → file: `fx_file(key)` — the key itself when it is URL-safe (`[A-Za-z0-9_.-]`), else the safe form + `-` + the key's CRC32 in hex, e.g. `buff_ fragile_01` → `buff__fragile_01-9c1f…`) |
+| `tex/<key>.webp`, `tex/half/<key>.webp` (or `.png`) | §33.8: every texture (WebP q90 by default; optional lossless PNG), and a half-size copy for the light tier (both sides ≥ 64 px) |
+| `mesh/<key>.json` | §33.9: meshes of mesh particles, MeshRenderers, skinned meshes and mesh-shaped emitters |
 
 **The file list: `data/local-fx.json`** (written next to `data/local-assets.json`, `--manifest`; gitignored like it).
 It names every file, so the server's asset index hashes its URL: the server hands it out at `GET /data/local-fx.json` as
@@ -177,7 +177,7 @@ effects out while `tools/package.mjs FULL_ZIP_FX` is off. The runtime takes URLs
 |---|---|
 | `fx` | `index` `{ path, kind: 'FxIndex', version, set, prefabs }`, `textures` `{ path, kind: 'FxTextures', count }` |
 | `fx/prefabs` | effect key → `{ path, kind: 'FxPrefab' }` |
-| `fx/tex` | texture key → `{ path, w, h, kind: 'Texture2D', half? }` (`half`: the half-size copy's URL) |
+| `fx/tex` | texture key → `{ path, w, h, kind: 'Texture2D', encoding?: 'png' \| 'webp', half? }` (`half`: the half-size copy's URL; default WebP entries omit `encoding`) |
 | `fx/mesh` | mesh key → `{ path, kind: 'FxMesh', verts }` |
 
 Each JSON file starts with `format` (`fx-index`, `fx-textures`, `fx-prefab`, `fx-mesh`) and `version` (1; since Phase
@@ -285,7 +285,7 @@ MinMaxCurve).
 | `{ node }` | a GameObject of this prefab (§35.4 node id) |
 | `{ node, component }` | a component on that node (`'Transform'`, `'ParticleSystem'`, …) |
 | `{ material: i }` | `materials[i]` of this descriptor |
-| `{ mesh: key }` | a mesh file (§35.9); `'builtin:Quad'` etc. for Unity's built-in meshes |
+| `{ mesh: key }` | a mesh file (§37.9); `'builtin:Quad'` etc. for Unity's built-in meshes |
 | `{ texture: key }` | a texture (§35.8) |
 | `{ clip: i }` | `clips[i]` of this descriptor |
 | `{ builtin: x }` | an asset of Unity's built-in resources (`x`: a built-in mesh name or its path id) |
@@ -463,7 +463,7 @@ streams) the components are 0.
 `builtin:Quad` is Unity's quad: vertices (±0.5, ±0.5, 0), normal −Z, UV (0,0) at (−0.5, −0.5).
 
 **`skinnedMeshRenderer`**: `m_Mesh`, `m_Bones` (`[{node, component}]`, the bone transforms), `m_RootBone`, `m_Quality`,
-`m_BlendShapeWeights`; the mesh file carries `boneWeights`, `boneIndices`, `bindPoses` (§35.9). A vertex is
+`m_BlendShapeWeights`; the mesh file carries `boneWeights`, `boneIndices`, `bindPoses` (§37.9). A vertex is
 Σᵢ wᵢ · (boneᵢ world · bindPoseᵢ) · v. 17 prefabs in the used set (Ifrit S3's flame tongues), animated by legacy clips.
 
 **`trailRenderer`**: `m_Time` (trail lifetime, s), `m_MinVertexDistance`, `m_Autodestruct`, `m_Emitting`, `m_Parameters`
@@ -530,7 +530,7 @@ Disturb variants offset the main UVs by a scrolled distortion texture.
 
 ```
 { name (the Unity name), w, h, format (the client's encoding: DXT1, DXT5, RGBA32, …), mips, srgb, alpha,
-  file: 'tex/<key>.webp', half: 'tex/half/<key>.webp' | null,
+  encoding?: 'png' | 'webp', file: 'tex/<key>.webp', half: 'tex/half/<key>.webp' | null,
   wrapU, wrapV ('repeat' | 'clamp' | 'mirror' | 'mirrorOnce'), filter ('point' | 'bilinear' | 'trilinear'), aniso }
 ```
 
@@ -538,6 +538,17 @@ A key is the safe Unity name + the first 8 hex digits of the SHA-1 of the decode
 different bundles share one file (`star_02` alone exists ~50 times in the client). `alpha` false = every pixel opaque
 (written as RGB). Textures are straight (not premultiplied) alpha; the half-size copy is resized premultiplied (no dark
 fringes). `srgb` is informational: render in gamma space (§35.2). Built-in textures appear as `builtin:<path id>`.
+
+Optional PNG textures are documented in history §37.96 (PR #806). WebP quality 90, method 4 is the extraction default, with the existing Pillow options, image bytes and
+metadata. `extract.py --only fx --fx-texture-format png` selects lossless PNG when WebP's RGB artefacts matter.
+Both full and half files use the selected encoding; dimensions, keys, sampler settings and effect descriptors stay
+the same. `format` keeps the original texture's GPU encoding. PNG output adds `encoding: 'png'` to this metadata
+and the file list; default WebP output keeps the existing metadata without that optional field. The loader already
+decodes the URL named by the file list, so a set may mix PNG and WebP, including after a `--fx-keys` update. The
+server hashes and serves both suffixes through the existing asset pipeline.
+
+Encoded sizes depend on the texture and selected format: lossless PNG avoids WebP's RGB loss, while the default
+WebP usually reduces transfer bytes. Both formats use the same decoded image dimensions and GPU memory.
 
 ### 35.9 Meshes (`mesh/<key>.json`)
 
@@ -1297,8 +1308,20 @@ index.json — version 1 and the version 2 fields (§35.12, §35.15; Phase 3c) �
     effects at the fx's tile for the area's time (the projectile stays where it lands: AuraHitBehaviour); 异客 S3's
     strikes `pasngr_skill_03_hit`; 溯光星源 S2's links the link projectile's hit on each pulled enemy; 焰影苇草 S2's
     fire strikes `reed2_skill_02_hit`; 蕾缪安 S3's lock the aim projectile's crosshair (`lemuen_skill_03_crosshair_range`
-    / `_02`, 1.5 s without a hold [ASSUMED])
-    and her bombard the attack projectile's reached hit.
+    / `_02`), held as `hold: 'lock'` since 0.3.2 (PR #862, history §37.39): on the locked enemy, at its last spot once
+    it is gone, until the bombard of the shell that claimed it (a `bombardShell` takes her nearest free lock within
+    `LOCK_SHELL_NEAR` 3); a lock no shell claims ends `LOCK_T` 5 s after the last sign of her S3, locks with no shell
+    end when she is knocked out, at most `MAX_LOCKS` 48, and a tier switch clears them (the 5 s / 48 / 3 are carried
+    over from render/fx/locks.js [ASSUMED]; before, the kit's `hold: 1` flag stopped each crosshair after 1 s)
+    and her bombard the attack projectile's reached hit. Since 0.3.1 (history §34.5): 号角 S1's flare (the light
+    projectile `projectile_chr_horn_s1_light`'s reached `horn_skill_01_hit_02_buff` / `_02`), and the 自选 pick 琴柳's
+    flags — S2 `sleach_skill_02_flag_01` with its ground, S3 `sleach_skill_03_flag_01` with its range loops and its strike
+    `sleach_skill_03_range_start_01` / `_02` (the flag model itself — a pole and a skinned cloth of the unported SimSpine
+    shader, drawn through the basic fallback — does not show yet [open]).
+    A binding at 'point' lies on the field's tile there (OfficialFx ctx.heightAt; before, its owner's height — 锡人's
+    flask on the road at his high ground's 0.42), and a flight whose projectile a binding of the shooter's places
+    leaves its reached effects to it (SkillFx.bindsReached; before, 锡人's flask also played at the target's HitPoint
+    where the drawn flight ended, for up to LOOP_TTL).
   - A kit fx kind the skill's own official effects stand for is skipped while the skill lasts (`FX_COVER`: on, its
     activation frame, `COVER_AFTER_S` = 1 s after its end [ASSUMED], or a binding of the owner still held) when the
     skill's plan has an installed prefab: 莫斯提马 S2's zone, 白面鸮 S2's and 流明 S1's heal fields (his: the skill's
@@ -1349,7 +1372,7 @@ index.json — version 1 and the version 2 fields (§35.12, §35.15; Phase 3c) �
   combat modes are not played.
 * **Sorting against the units**: a renderer that sorts before the units (§35.6: a lower sorting layer, or the Default
   layer with a negative order) draws in the pass under them (`effect.js behindUnits`), with those lying flat on the
-  ground; skinned meshes read the influences per vertex their file stores (`geom.js skinStride`, §35.9).
+  ground; skinned meshes read the influences per vertex their file stores (`geom.js skinStride`, §37.9).
 
 Coverage of the roster (`tools/vfx-skill-coverage.mjs`, version 1 → version 2; version 3 below): operator (unit, skill)
 pairs 547 → 548 of 549 in the index, 501 → 502 with a plan the battle view drives (91.4 %); summons 2 → 71 of 78, 2 → 23

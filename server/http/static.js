@@ -41,6 +41,47 @@
 //     /data/<file>.json              → served MERGED (official + packs) when a pack touches that file
 //     /mods/catalog.json, /mods/file/<pack>/<path> → the installed packs and their bytes, for the CLIENT-side mod cache
 //                (server/http/mods.js): only a path the catalogue lists, and only inside the pack's own directory
+//     /packs/index.json → the language packs of this server (server/plugins/registry.js: public/i18n/, the pack
+//                folders of packs/ and the lang plugins of plugins/, re-read when they change; never cached)
+//     /packs/<id>/<file> → a file of a pack or lang plugin folder — only one its manifest names (registry servable)
+//     /plugins/index.json → the plugin catalogue: every plugin and pack found, by class and status, and the vanilla
+//                content hash (DESIGN §32; never cached). Of plugins/ only the files a lang manifest names (through
+//                /packs/<id>/<file>), the files a loaded cosmetic overlay names and the frame files of a loaded ui
+//                plugin (/p/…; a ui file also sends the frame Content-Security-Policy) are served
+//     /cs/<cs16>/index.json → the manifest of the vanilla content set (server/plugins/identity.js contentIndexOf),
+//                cached for good — for this server's vanilla `cs` (its first 16 hex digits) and, from P1c (DESIGN §32.6),
+//                a content set with gameplay plugins a room uses or used lately (server/plugins/contentSets.js: the same
+//                shape with `vanilla: false`, its plugins, settings and modes)
+//     /cs/<cs16>/index.json, /cs/<cs16>/bounds/official.json of an official version this server enables (DESIGN §37.23,
+//                server/versions.js file): its manifest (`version`, data URLs under /data/versions/<slug>/) and its
+//                official-bounds snapshot, cached for good
+//     /data/versions/<slug>/<file>.json → another official version's data — only an enabled version's directory
+//                (versions.servedDirs(); the real path decides, in any spelling); `?v=` immutable like /data/. Every other
+//                path under data/versions/ is a 404, as before M1
+//     /cs/<cs16>/data/<file>.json, /cs/<cs16>/i18n/<lang>.json → a data or translation file that content set changed,
+//                its served bytes from memory (cached for good; every other file of the set is named by its plain
+//                /data/…?v=<8 hex> URL in the manifest)
+//     /vs/<vs16>/overlay.json → a visual set of cosmetic plugins (server/plugins/visualSet.js): its composition and
+//                its plugins' writes, which a page lays over the manifest it loaded itself (a room's set, a player's
+//                personal plugin) — no-cache, the body's hash as ETag; 404 for a set this server does not know
+//     /p/<id>/<hash8>/<path> → a file of a loaded cosmetic plugin — only one its overlay names — or a frame file of a
+//                loaded ui plugin (html / js / css / png under entry.client). registry pluginFile is the whitelist
+//                (no dot file, no `..`; only the very file the scan hashed — a symbolic link put in its place, or in place
+//                of a folder on its way, is never followed, wherever it leads). A ui file's response carries
+//                UI_FRAME_CSP (shared/plugins/ui.js); a cosmetic file does not. A hash naming its current bytes (its own
+//                first 8 hex digits, or its Spine model's) answers `immutable` for a year while the file keeps the size,
+//                mtime, inode and ctime it was hashed with; any other hash, or a file changed since the scan, the current
+//                file with `no-cache` — as for /assets/~<hash>/ below — and a changed file has the registry read the
+//                folders again. An audio file is also served without its extension — /p/<id>/<hash8>/<path without
+//                .mp3 / .ogg> — for the same download managers as /media/ below (public/js/media.js mediaUrl; when both
+//                a .mp3 and a .ogg are listed, the one whose hash the URL names)
+//     /assets/~<hash>/…, /fonts/~<hash>/…, /media/~<hash>/… → the same files: the content-hash segment
+//                (shared/assetPaths.js) is stripped. A hash that names the file's current bytes (assetIndex.js
+//                urlHashOk: its own hash, or its Spine model's) answers `immutable` for a year; any other hash —
+//                an old page, a URL derived from another file's — the current file with `no-cache`
+//     /data/assets.json, /data/local-assets.json, /data/local-fx.json → the served manifests (assetViews.js: every
+//                art URL with its content-hash segment; no-cache, the ETag of the view) once the asset index is ready,
+//                the files as they are before that or without an index
 //
 // `/assets/` and `/fonts/` answer 412 and never touch the file system when a pack declared
 // `assets.serverPolicy: "cache-only"` (DESIGN §28.13.4): the file is supposed to come from the client's own cache.
@@ -162,6 +203,8 @@ function resolvePackRelativeKit(decoded, kitDirs) {
  *   workshopKitDirs?: Map<string, string>|null,
  *   workshopPanelFiles?: Map<string, string>|null, workshopAssets?: Map<string, string>|null,
  *   workshopRoutes?: Map<string, object>|null, workshopResourceFiles?: Map<string, object>|null,
+ *   versions?: { servedDirs: () => string[], file: Function } | null
+ *   versions: 本服务器启用的官方版本（server/versions.js，DESIGN §37.22/§37.23）；null ⇒ /data/versions/ 不服务
  *   resourcePolicy?: 'serve'|'cache-only' }} dirs
  *   packs: the server's pack registry (default: one over publicDir, dataDir and packsDir — ROOT/packs)
  *   workshop*: the 创意工坊 tables `server/index.js` builds once per process (empty maps on a plain install, and every
@@ -209,6 +252,7 @@ export function createStaticHandler({
   // 视觉集（server/plugins/visualSet.js，DESIGN §34 P1a）与「带玩法插件的内容集」（server/plugins/contentSets.js，
   // DESIGN §34.6）：两者缺省都是从上文的 `registry` 现起（内容集没有 `contents` 时只答原生那一份 /cs/ 清单）。
   visual = null, contents = null,
+  versions = null,
 }) {
   const registry = packs || createPluginRegistry({ publicDir, dataDir, packsDir, pluginsDir }, { log: /** @type {any} */ (log) });
   // 视觉集只在注册表真的有 pluginFile 时起（0.2.0 形态的自建注册表没有它 ⇒ /vs/ 与 /p/ 一律 404）
@@ -229,6 +273,22 @@ export function createStaticHandler({
     // the simulation: ES modules only (no directory listings, no other file types, no Node-only loader)
     m.name === 'sim' ? { ...m, only: new Set(['.js']), deny: SIM_PRIVATE } : m
   ));
+
+  // another official version's data (data/versions/<slug>/, DESIGN §37.22, §37.23): the release carries every version,
+  // but only the directories of the versions this server enables are served (versions.servedDirs()); the on-disk path
+  // decides (case-insensitive disks, Windows short names), as for the studio below
+  let versionsReal = null;
+  /** @type {string[] | null} the real paths of the served version directories */
+  let servedReal = null;
+  /** Is `abs` another version's data that may not be served (under data/versions/, outside every served directory)? */
+  const isVersionData = async (abs) => {
+    versionsReal ||= await fsp.realpath(path.join(path.resolve(dataDir), 'versions')).catch(() => null);
+    if (!versionsReal) return false;
+    const real = await fsp.realpath(abs).catch(() => null);
+    if (!real || !real.startsWith(versionsReal + path.sep)) return false;
+    servedReal ||= (await Promise.all((versions?.servedDirs() || []).map((d) => fsp.realpath(d).catch(() => null)))).filter((d) => typeof d === 'string');
+    return !servedReal.some((d) => real.startsWith(d + path.sep));
+  };
   const shimBody = Buffer.from(DATA_SHIM_JS);
   const shimTag = `"shim-${shimBody.length.toString(16)}"`;
   const gzipCache = new CompressCache(); // brotli and gzip bodies (files.js)
@@ -279,8 +339,12 @@ export function createStaticHandler({
       if (decoded !== `/cs/${csUrlPart(c.cs)}/index.json`) {
         // a content set with gameplay plugins (DESIGN §34.6, server/plugins/contentSets.js): its manifest and its patched
         // data files — a URL naming its content, so cached for good; 404 for a set this server does not keep
+        // an official version's manifest and bounds (DESIGN §37.23, server/versions.js), else a content set with gameplay
+        // plugins (DESIGN §32.6, server/plugins/contentSets.js): its manifest and its patched data files — a URL naming
+        // its content, so cached for good; 404 for a set this server does not keep
         const m = CS_FILE.exec(decoded);
-        const f = m && contents && !m[2].split('/').some((s) => s === '' || s === '.' || s === '..' || s.startsWith('.')) ? contents.file(m[1], m[2]) : null;
+        const safe = !!m && !m[2].split('/').some((s) => s === '' || s === '.' || s === '..' || s.startsWith('.'));
+        const f = safe && m ? (versions?.file(m[1], m[2]) || (contents ? contents.file(m[1], m[2]) : null)) : null;
         if (!f) { sendError(req, res, 404, '页面不存在 · Not found', decoded.length <= 200 ? decoded : ''); return; }
         await serveBuffer(req, res, { body: f.body, hash: `cs-${m[1]}-${(f.sha256 || 'index').slice(0, 8)}`, type: f.type || MIME['.json'], cacheControl: IMMUTABLE_JSON, key: `cs:${decoded}`, cache: gzipCache });
         return;
@@ -658,6 +722,9 @@ export function createStaticHandler({
         // the on-disk name decides (case-insensitive file systems, Windows 8.3 short names like NODEDA~1.JS)
         const real = await fsp.realpath(absPath);
         if (mount.deny.has(path.basename(real).toLowerCase())) throw Object.assign(new Error('private'), { code: 'ENOENT' });
+      }
+      if (mount.name === 'data' && segments.length > 1 && await isVersionData(absPath)) {
+        throw Object.assign(new Error('version data'), { code: 'ENOENT' });
       }
     } catch (e) {
       if (e && e.code === 'ENOENT' && mount.name === 'data' && segments.length === 1 && LOCAL_ART_MANIFESTS.has(segments[0])) {

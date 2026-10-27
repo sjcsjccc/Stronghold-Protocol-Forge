@@ -7,18 +7,21 @@
 //              in and its bonds;
 //   敌方资料 — 领袖 (bosses.json, the hidden variants left out) and 战术特训敌人 (factions.json types) tiles; the left: art,
 //              name, text and the leader with its escorts / the type's enemies; 查看 opens the enemy codex (全部 / 普通 /
-//              精英 / 领袖, a search, letter grades from the spread of the game's own enemies with the numbers beside them).
-// ⓘ opens 玩法说明 at its 进阶图鉴 chapter. Esc closes the codex first, then the screen. The tab is remembered.
-// It comes up from black over the hub and fades back out like the other hub screens (ui/transitions.js).
-// Styles: css/screens/lobby.css (sw-*).
-
+//              精英 / 领袖, a search; per stat the official handbook's letter grade — factions.json handbookLevels, from
+//              enemy_handbook_table levelInfoList: E … SS — with the enemy's own number beside it).
+// ⓘ opens 玩法说明 at its 进阶图鉴 chapter. The report and the codex are full-screen Modals (focus trap; Esc closes the
+// codex first, then the report; the focus returns to the lobby's button). The tab is remembered (sp.pref).
+// 本 fork 额外：进出场仍走 ui/transitions.js 的那条过渡（`is-leaving`），所以 Modal 的 class 由 cx 拼。
+// Styles: css/screens/sweep.css (sw-*).
 import { useEffect, useMemo, useRef, useState } from '../../vendor/hooks.module.js';
-import { html, Icon, roman } from '../ui/components.js';
+import { html, Button, Icon, Modal, roman } from '../ui/components.js';
 import { Img, RichText, GIcon } from '../ui/gameComponents.js';
 import { bondIconUrl, bandIconUrl, enemyIconUrl, factionIconUrl, chessAvatarUrl } from '../ui/assetUrls.js';
 import { attackInterval, fmtNum } from '../ui/gameLogic.js';
 import { abilityRows } from '../ui/abilityLines.js';
 import { data, useData } from '../data.js';
+import { contentSet, pageVersion, retryContentSet } from '../content.js';
+import { DEFAULT_VERSION, shownVersion } from '../versions.js';
 import { useStore, loadPref, savePref } from '../store.js';
 import { loadoutStore, openLoadout } from '../ui/loadoutSync.js';
 import { openGuide, guidePages, guideStore } from '../ui/guide.js';
@@ -365,7 +368,7 @@ function EnemyCodex({ open, m, onClose }) {
     && (!needle || String(e.name || '').toLowerCase().includes(needle) || String(e.handbookIndex || '').toLowerCase().includes(needle)));
   const cur = list.find((e) => e.key === sel) || list[0] || null;
   const counts = Object.fromEntries(RANK_TABS.map(([k]) => [k, pool.filter((e) => k === 'all' || e.rank === k).length]));
-  return html`<div class="sw-codex" role="dialog" aria-label=${t('敌方图鉴')}>
+  return html`<${Modal} open=${true} onClose=${onClose} class="sw-codex" veilClass="sw-veil" closeOnBackdrop=${false}>
     <div class="sw-codex__top">
       <button type="button" class="sw-back" onClick=${onClose} aria-label=${t('返回')} title=${t('返回 (Esc)')}><${Icon} name="chevronLeft" /></button>
       <span class="sw-codex__title">${t('敌方图鉴')}</span>
@@ -401,8 +404,15 @@ function handbookPage() {
  * The report overlay. @param {{ onClose: () => void }} props
  */
 export function SweepReport({ onClose }) {
-  const ready = useData('bonds', 'bands', 'bosses', 'factions', 'enemies', 'chess', 'assets');
+  const filesReady = useData('bonds', 'bands', 'bosses', 'factions', 'enemies', 'chess', 'assets');
   useData('local');
+  const version = useStore(shownVersion);
+  const content = useStore((s) => s, Object.is, contentSet);
+  // useData can already be ready for the PREVIOUS version: content.js keeps that set until the new one checks.
+  // Subscribe to the requested version's progress too, and never present the previous set as its report.
+  const failed = content.kind === 'version' && content.version === version && content.status === 'failed';
+  const ready = filesReady && pageVersion() === version
+    && (version === DEFAULT_VERSION || (content.version === version && content.status === 'ready'));
   const m = data.get('assets');
   const notOwned = useStore((s) => s.notOwned, Object.is, loadoutStore);
   const [tab, setTabState] = useState(() => { const v = loadPref(TAB_PREF, 'bonds'); return TABS.some((x) => x.id === v) ? v : 'bonds'; });
@@ -441,8 +451,11 @@ export function SweepReport({ onClose }) {
   }, []);
 
   let left = null;
-  let right = null;
-  if (!ready) {
+  let right;
+  if (failed) {
+    right = html`<div class="sw-loading" role="alert"><p>${t('版本数据校验失败')}</p>
+      <${Button} onClick=${retryContentSet}>${t('重试')}<//></div>`;
+  } else if (!ready) {
     right = html`<p class="sw-loading">${t('正在读取报告…')}</p>`;
   } else if (tab === 'bonds') {
     left = bond ? html`<${BondPanel} key=${bond.bondId} bond=${bond} m=${m} notOwned=${notOwned} />` : null;
@@ -455,7 +468,10 @@ export function SweepReport({ onClose }) {
     right = html`<${EnemiesTab} m=${m} sel=${eSel || {}} onSel=${setEnemySel} onCodex=${setCodex} />`;
   }
 
-  return html`<div class=${cx('sw', leaving && 'is-leaving')} data-tab=${tab}>
+  // the codex is the report's sibling, not its child: the report's body lifts its children over the backdrop
+  // (position: relative), which would pull a nested Modal out of its fixed layer
+  return html`<${Modal} open=${true} onClose=${onClose} class=${cx('sw', leaving && 'is-leaving')}
+    veilClass="sw-veil" closeOnBackdrop=${false} data-tab=${tab}>
     <div class="sw__bg" aria-hidden="true"><i class="sw__mist"></i><i class="sw__lines"></i></div>
     <header class="sw-top">
       <div class="sw-top__left">

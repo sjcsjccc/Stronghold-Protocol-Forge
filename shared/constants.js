@@ -32,7 +32,7 @@ export const MOD_API_VERSION = 1;
 /** Release version shown to players (title screen, server banner, /healthz). Kept equal to package.json "version"
  * (test/version.test.js); PROTOCOL_VERSION above is the separate wire-format number. The release TAG spells both halves
  * out — `v<this>-<upstream>` (README 「版本号」) — because this one has to stay a plain three-part semver. */
-export const APP_VERSION = '0.19.1';
+export const APP_VERSION = '0.21.0';
 /**
  * The UPSTREAM game version this checkout bundles (README 「版本号」). The release TAG spells both halves out —
  * `v<APP_VERSION>-<UPSTREAM_VERSION>` — because `APP_VERSION` itself has to stay a plain three-part semver.
@@ -44,7 +44,7 @@ export const APP_VERSION = '0.19.1';
  * `scripts/make-update-package.mjs` tell "the next release" from "the very release I am building"
  * (a bundle that only names `0.14.0` cannot: 0.14.0-0.2.3 and 0.14.0-0.2.4 look identical to it).
  */
-export const UPSTREAM_VERSION = '0.3.1';
+export const UPSTREAM_VERSION = '0.3.3';
 /**
  * The version a **plugin** manifest's `app` range is judged against — the **upstream half**, NOT `APP_VERSION`.
  *
@@ -81,8 +81,13 @@ export const DEV_BUILD = /-dev$/.test(APP_VERSION);
  * 见 `docs/DESIGN.md` 的索引表，上游 §N ↔ 我们 §(N+2)：`shared/plugins/manifest.js`): a manifest 2 states the level it
  * is written for (`api`); a level outside min…current keeps the plugin out. The level rises when the data shapes, the
  * DSL vocabulary or the SDK a plugin relies on change incompatibly (CHANGELOG says how to migrate). [ASSUMED]
+ *
+ * 0.20.0（本仓库）把 `current` 从 2 抬到 **3**（新增的钩子面），但 **`min` 仍是 1**：抬 `min` 等于
+ * 一纸拒信，把**已经写好**的插件（上游 0.3.2 自己的四个模板、本仓库 67 处测试夹具都在 api 1）
+ * 全部拒之门外 —— 那是「提版本」变成「断兼容」。API 3 是**加法**，所以 1 和 2 继续收。
+ * 新写的插件建议写 2（本仓库 `plugins/_template/*` 的四个清单已按 2 标注）。
  */
-export const PLUGIN_API = Object.freeze({ current: 2, min: 1 });
+export const PLUGIN_API = Object.freeze({ current: 3, min: 1 });
 
 /**
  * The voice slots a pack may ship lines for (角色语音台词) — the ONE copy of this vocabulary: the workshop validator
@@ -220,6 +225,11 @@ export function clampSeats(want, max = MAX_SEATS) {
 // 2026-10-04); the seats still never count as players and a spectator still never acts.
 export const SPECTATORS_DEFAULT = 5;
 export const MAX_SPECTATORS = 20;
+/**
+ * 重刷本局 (PR #860, DESIGN §28.21 [ASSUMED]): each seat may open one setup-reroll vote per this many ms. Shared so the
+ * client's refusal toast (ui/toasts.js) names the server's value (server/match/match/setupVote.js).
+ */
+export const SETUP_REROLL_COOLDOWN_MS = 30_000;
 export const ROOM_CODE_LEN = 4;
 export const NAME_MAX_LEN = 12;
 /**
@@ -362,7 +372,8 @@ export function layerGainRoom(before, n) {
  * = data/bosses.json `enemyKey`; in the sim the tag-'boss' units: those leaders and their mirrored copies, never parts,
  * escorts or drones) whose `ceil(final damage)` ≥ this is CANCELLED: 0 damage, nothing credited to the shared pool
  * (`AutoChessStepModeManager._OnBossEnemyTakeDamage` → `modifier.Cancel()`). It is not a clamp: a hit of 299999 lands.
- * Checked in server/sim/damage.js (dealDamage after DEF / RES and every multiplier, before shields; Battle.loseHp — not
+ * Checked in server/sim/attack/hit.js (resolveDamage: after the calculation and output stages and the target's damage-taken
+ * multipliers, before the ordered injury effects — barriers, shields, dodges) and server/sim/attack.js (dealHPLose — not
  * the 胄 drone link's pool share, `noHitLimit`, DESIGN §25.13.4). Minions, normal rounds and 联防 are unaffected.
  * 0 / Infinity = off.
  *
@@ -412,7 +423,10 @@ export const ERR = Object.freeze({
   NOT_IN_ROOM: 'NOT_IN_ROOM',
   ROOM_NOT_FOUND: 'ROOM_NOT_FOUND',
   ROOM_FULL: 'ROOM_FULL',
+  SERVER_FULL: 'SERVER_FULL',     // the online cap (SP_MAX_ONLINE) has no seat for a new player
   ROOM_STARTED: 'ROOM_STARTED',
+  // a fixed alliance key (--room-code): one room at a time can hold it
+  ROOM_CODE_TAKEN: 'ROOM_CODE_TAKEN',
   NOT_HOST: 'NOT_HOST',
   NOT_READY: 'NOT_READY',
   WRONG_PHASE: 'WRONG_PHASE',
@@ -486,13 +500,20 @@ export const ERR = Object.freeze({
   TEST_CONFIRM: 'TEST_CONFIRM',
   TEST_DISABLED: 'TEST_DISABLED',
   TEST_FORBIDDEN: 'TEST_FORBIDDEN',
+  // official versions (DESIGN §37.23, M1): a version this server does not enable (room.create, room.proposeVersion); a
+  // version that cannot serve the room (its roomModes, or the room's gameplay plugins — they play 第二期下半 only); a room
+  // action refused while the room's version vote is open (room.start, room.setPlugins, room.setMode, room.proposeVersion)
+  VERSION_UNKNOWN: 'VERSION_UNKNOWN',
+  VERSION_UNSUPPORTED: 'VERSION_UNSUPPORTED',
+  VERSION_VOTE: 'VERSION_VOTE',
   INTERNAL: 'INTERNAL',
 });
 
 export const ERR_TEXT = {
   SESSION_IN_USE: N_('此对局仍在其他窗口中，或当前浏览器无法安全恢复。请关闭原窗口后重试。'),
   BAD_MSG: N_('无效的请求'), RATE: N_('操作过于频繁'), NOT_IN_ROOM: N_('你不在房间中'), ROOM_NOT_FOUND: N_('未找到该同盟密钥对应的房间'),
-  ROOM_FULL: N_('房间已满'), ROOM_STARTED: N_('模拟已开始'), NOT_HOST: N_('只有房主可以操作'), NOT_READY: N_('仍有玩家未就绪'),
+  ROOM_FULL: N_('房间已满'), SERVER_FULL: N_('服务器已满'), ROOM_STARTED: N_('模拟已开始'), NOT_HOST: N_('只有房主可以操作'), NOT_READY: N_('仍有玩家未就绪'),
+  ROOM_CODE_TAKEN: N_('固定同盟密钥已被另一个房间占用，请先关闭那个房间'),
   WRONG_PHASE: N_('当前阶段无法进行该操作'), NO_FUNDS: N_('资金不足'), HAND_FULL: N_('整备区已满'), BOARD_FULL: N_('已达到部署上限'),
   BAD_TILE: N_('无法部署在该位置'), BAD_TARGET: N_('无效的目标'), SOLD_OUT: N_('已售出'), MAX_LEVEL: N_('调度中心已达最高等级'),
   NOT_YOUR_TURN: N_('尚未轮到你'), ALREADY: N_('已完成该操作'), TEMP_NOT_EMPTY: N_('临时整备区不为空'), ELIMINATED: N_('你已被淘汰'),
@@ -519,6 +540,9 @@ export const ERR_TEXT = {
   TEST_CONFIRM: N_('这是测试房间，不计入任何记录。确认加入？'),
   TEST_DISABLED: N_('测试模式未开启'),
   TEST_FORBIDDEN: N_('这不是测试房间'),
+  VERSION_UNKNOWN: N_('本服务器没有启用该版本'),
+  VERSION_UNSUPPORTED: N_('该版本不能用于当前房间（例如房间开着改变玩法的插件）'),
+  VERSION_VOTE: N_('切换版本投票进行中，请等投票结束'),
 };
 
 // ---- Emotes (交流, research 09 §4) -----------------------------------------------------------------------------

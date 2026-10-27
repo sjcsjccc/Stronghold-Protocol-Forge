@@ -1043,10 +1043,8 @@ describe('browser E2E against the real server', { skip: !ENABLED && 'needs Chrom
       await sleep(400);
       await host.shot('lobby');
       await openGuide(host, '.lobby-guide', 'guide-lobby');
-      await host.click('.mode-card', '同盟模拟');
-      await host.click('.diff-card', '险境模拟');
-      await host.click('.create-box button', '创建同盟');
-      const room = (await host.waitFor((s) => !!s.room?.code, 'room created')).room;
+      // 创建同盟 creates the room at once (标准); the host changes the difficulty in the room (the event's 联合模拟)
+      const room = await host.createCoop('险境模拟');
       await host.click('button', '添加 AI 队友');
       await guest.open(`?room=${room.code}`);
       await guest.shot('title');
@@ -1080,8 +1078,17 @@ describe('browser E2E against the real server', { skip: !ENABLED && 'needs Chrom
           if (c === guest && !guestSkipped) {
             await c.click('.draft-detail__btns .btn', '跳过');
             guestSkipped = true;
-            c.note('band draft: skipped once');
-            continue;
+            // one skip — only while someone is left to pass to: the last player still to pick sees 跳过 disabled
+            // (PR #546), which a random draft order gives the guest about one time in three
+            // (PR #828: 跳过选择 sits in the step header's turn line, .dturn .draft-skip, on the player's own turn)
+            const canSkip = await c.page.evaluate(() => [...document.querySelectorAll('.dturn .draft-skip')]
+              .some((b) => b.textContent.includes('跳过') && !b.disabled));
+            if (canSkip) {
+              await c.click('.dturn .draft-skip', '跳过');
+              c.note('band draft: skipped once');
+              continue;
+            }
+            c.note('band draft: 跳过 disabled (the last player still to pick)');
           }
           if ((s.draft?.picks || 0) > 0) {
             // research 09 §5: a strategy a teammate (human or AI) picked is marked 队友已选 and cannot be chosen

@@ -12,6 +12,18 @@
 //   * a path inside a host-registered request lane (DESIGN §28.45, httpLanes.js) → that lane, for a method the lane
 //     claimed. No lanes (the default, and the only thing a plain `npm start` has) ⇒ every rule below is exactly as it
 //     was: any method but GET / HEAD 405, everything else the static files;
+//   * /studio and /studio/… → the plugin studio (server/studio/index.js: for this machine and the local network only — any
+//     other client gets the 404 page; its API also takes POST / PUT / DELETE), when the server has one;
+//   * any method but GET / HEAD → 405 with `Allow: GET, HEAD`;
+//   * GET /healthz → JSON status (protocol `version`, release `app`, uptime, the served `build`, the vanilla content
+//     hash `content.vanilla`, the modded content sets in use `content.sets` and — only when there are some — how many
+//     unofficial plugins the server has, `content.plugins` (the title screen's count before any hello) — DESIGN §32 —,
+//     sockets, sessions,
+//     rooms, matches; `versions: { enabled, default, hosts }` only when the server enables another official version than
+//     第二期下半 — DESIGN §37.23), never cached; `?traffic=1` adds the traffic counters (traffic.js: bytes by category since the
+//     start, WebSocket wire and payload bytes) for a loopback or private-network client only — the maintainer's
+//     decision of 2026-10-12: the figures are the host's, so any other client, also one a tunnel or proxy on this
+//     machine forwards, gets the plain report (net.js clientAddress, honouring TRUST_PROXY like the WebSocket limits);
 //   * everything else → the static files (static.js).
 // A route that throws is logged and answers 500.
 //
@@ -133,8 +145,20 @@ function contentSets(lobby) {
 
 /**
  * **D19（取并集）**：上游的 `content` / `trusted` 照加法接；**我们的 `modHealth` 保留**。
+ * The GET /healthz body (`withTraffic`: plus the traffic counters and the asset index's state, `?traffic=1`).
+ * @param {{ startedAt: number, network: import('../net.js').Network, registry: import('../net.js').SessionRegistry,
+ *           lobby: import('../lobby.js').Lobby, modHealth?: (() => object) | object | null, content?: { cs: string } | null,
+ *           traffic?: ReturnType<typeof import('./traffic.js').createTrafficCounter>,
+ *           assetIndex?: ReturnType<typeof import('./assetIndex.js').createAssetIndex> | null,
+ *           views?: ReturnType<typeof import('./assetViews.js').createManifestViews> | null, trusted?: any,
+ *           versions?: ReturnType<typeof import('../versions.js').createVersionSets> | null,
+ *           versionHosts?: { stats: () => object } | null }} health
+ *   content: the server's vanilla content (server/plugins/identity.js); versions / versionHosts: the official versions
+ *   and their match hosts (DESIGN §37.23); modHealth: 创意工坊包的 /healthz 自述（docs/WORKSHOP.md）—— 上游没有这一格
+ * @param {boolean} [withTraffic]
  */
-export function healthReport({ startedAt, network, registry, lobby, modHealth = null, content = null, traffic, assetIndex, views, trusted }, withTraffic = false) {
+export function healthReport({ startedAt, network, registry, lobby, modHealth = null, content = null, traffic, assetIndex,
+  views, trusted, versions = null, versionHosts = null }, withTraffic = false) {
   /** @type {Record<string, any>} */
   const out = {
     ok: true, version: PROTOCOL_VERSION, app: APP_VERSION, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
@@ -147,15 +171,22 @@ export function healthReport({ startedAt, network, registry, lobby, modHealth = 
     ...(content ? { content: { vanilla: content.cs, sets: contentSets(lobby), ...pluginCount(lobby) } } : {}),
     sockets: network.connectionCount, sessions: registry.size, ...lobby.stats(),
   };
-  let fields = null;
-  try {
-    fields = typeof modHealth === 'function' ? modHealth() : modHealth;
-  } catch {
-    fields = null; // 一个包的 healthz 回调炸了不该让运维拿不到 /healthz
-  }
-  if (fields && typeof fields === 'object' && Object.keys(fields).length) out.modHealth = fields;
   if (trusted && Object.keys(trusted).length) out.plugins = trusted;
+
+  // 我们的创意工坊 healthz 自述（上游没有这一格）：一个包的回调炸了不该让运维拿不到 /healthz
+  try {
+    const fields = typeof modHealth === 'function' ? modHealth() : modHealth;
+    if (fields && typeof fields === 'object' && Object.keys(fields).length) out.modHealth = fields;
+  } catch {
+    /* 吞掉：见上 */
+  }
+  // the official versions (DESIGN §37.23): only when another one than 第二期下半 is enabled
+  if (versions && versions.nonDefault.length) {
+    out.versions = { enabled: [...versions.ids], default: versions.defaultId,
+      hosts: versionHosts ? versionHosts.stats() : { workers: 0, matches: 0, transport: 'process' } };
+  }
   if (withTraffic && traffic) out.traffic = traffic.snapshot();
+
   // content-hashed asset URLs (assetIndex.js / assetViews.js): off, building, or ready with how many files and URLs
   if (withTraffic) out.assetHashes = assetIndex ? { ...assetIndex.stats(), views: views ? views.stats() : null } : null;
   return out;

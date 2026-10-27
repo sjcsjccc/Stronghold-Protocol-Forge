@@ -5,6 +5,15 @@
 //                      which startServer() options go to net.js / lobby.js, the console logger
 //   http/websocket.js  session wiring (SessionRegistry → Lobby → Network) and the WebSocket at /ws (maxPayload 64 KB;
 //                      refused at upgrade with 404 / 429 per network / 503)
+//                      which startServer() options go to net.js / lobby.js, the console logger, the official versions
+//                      this server offers (SP_VERSIONS / SP_VERSION_DEFAULT / SP_MAX_VERSION_HOSTS — versions.js below)
+//   versions.js        the official versions (DESIGN §37.23, M1): each enabled one's cs, data, manifest
+//                      (/cs/<cs16>/index.json) and data directory (/data/versions/<slug>/); their matches run in match
+//                      hosts of their own (match/host/, kind 'version') — the pool exists when another version is
+//                      enabled (the default: all four) and forks a process on the first match of one, never at boot;
+//                      none when only 第二期下半 is enabled
+//   http/websocket.js  session wiring (SessionRegistry → Lobby → Network) and the WebSocket at /ws (maxPayload 64 KB,
+//                      permessage-deflate from 1 KB; refused at upgrade with 404 / 429 per network / 503)
 //   http/static.js     the static mounts (/ → public/, /data/, /shared/, /sim/ `.js` only), the /data.js browser stand-in,
 //                      the language packs (/packs/index.json, /packs/<id>/<file>) and the plugin catalogue
 //                      (/plugins/index.json — the registry is plugins/registry.js), the vanilla content set's manifest
@@ -51,8 +60,11 @@ import {
   buildWorkshopDataFiles, workshopKitFilesFor, workshopKitDirsFor, workshopPanelFilesFor, workshopAssetsFor, workshopRoutesFor,
   workshopResourceFilesFor, workshopModAssetsFrom, buildWorkshopI18nFiles, resourceServerPolicy, WORKSHOP_ASSET_PREFIX, WORKSHOP_ASSET_TYPES, workshopBattleFilesFor,
 } from './http/workshop.js';
-import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, assetIndexOptionsFrom } from './http/config.js';
+import { ROOT, listenAddress, bindCandidates, serveDirs, makeLogger, parseTrustProxy, assetIndexOptionsFrom, versionsFrom, parseRoomCode } from './http/config.js';
 import { WS_MAX_PAYLOAD, createSessionStack, attachWebSocket, transportPolicy } from './http/websocket.js';
+import { getBotStrategy } from './match/botStrategies.js';
+import { noteLlmIgnored, releaseIgnoresExternalAi, validateExternalConfig } from './match/llmGate.js';
+import { siteCsp } from './http/csp.js';
 import { DATA_SHIM_JS, createStaticHandler } from './http/static.js';
 import { createPackRegistry } from './packs.js';
 // 0.3.0（上游 DESIGN §34）的插件面：包注册表并进插件注册表（`server/packs.js` 现在只是它的别名再导出），
@@ -64,10 +76,11 @@ import { createContentSets } from './plugins/contentSets.js';
 import { createPluginPolicy } from './plugins/policy.js';
 import { createRoomSets } from './plugins/roomSets.js';
 import { createMatchHosts } from './match/host/index.js';
+import { createVersionSets } from './versions.js';
+import { versionById } from '../shared/versions.js';
 import { createTrustedRuntime } from './plugins/trustedRuntime.js';
 import { trustedHostAllowed } from './plugins/trusted.js';
 import { createStudio } from './studio/index.js';
-import { siteCsp } from './http/csp.js';
 import { MIME, COMPRESSIBLE, acceptsGzip, pickEncoding, parseRange } from './http/files.js';
 import { BUILD_INPUTS, computeBuildTag, buildTag, resetBuildTag } from './http/buildTag.js';
 import { createRequestHandler } from './http/routes.js';
@@ -82,6 +95,8 @@ import { coreMounts } from './http/routeMount.js';
 import { createModsRoute, serveMods, MODS_CATALOG_URL, MOD_FILE_PREFIX } from './http/mods.js';
 import { buildModCatalog } from './modCatalog.js';
 import { answerClientError } from './http/common.js';
+import { createEventLoopMonitor } from './health/eventLoop.js';
+import { createRoomWorkerPool } from './workers/roomPool.js';
 import { lanUrls, displayHost, isProcessEntry, runMain } from './http/boot.js';
 
 // The public API of this module (tests and tools import it from here); the code lives in ./http/.
@@ -121,11 +136,41 @@ export {
  *                     traffic: ReturnType<typeof createTrafficCounter>,
  *                     assetIndex: ReturnType<typeof createAssetIndex> | null,
  *                     views: ReturnType<typeof createManifestViews> | null,
+ *   versionVoteMs?: number, versionRetryMs?: number,
+ *   roomCode?: string | null,
+ *   assetIndex?: boolean | { cacheFile?: string | null, delayMs?: number }, studio?: boolean,
+ *   matchHost?: object, versions?: { enabled?: 'all' | string[], default?: string, maxHosts?: number },
+ * }} [opts]
+ *   assetIndex: the content-hash index (default on; false or SP_ASSET_INDEX=0: off — config.js assetIndexOptionsFrom);
+ *   studio: the plugin studio at /studio/ (default on for this machine and the local network — SP_STUDIO=local|off;
+ *   false: none);
+ *   matchHost: options of the match hosts (server/match/host/index.js — watchdogMs, matchOptions …; tests) — the
+ *   version hosts' too; versions: the official versions this server offers (http/config.js versionsFrom; DESIGN §37.23);
+ *   versionVoteMs / versionRetryMs: the version vote's answer window and the guard after a declined or expired vote (tests;
+ *   server/lobby.js header "Official versions")
+ *   roomCode: a fixed alliance key for every new room (--room-code; four letters or digits — config.js parseRoomCode);
+ * @returns {Promise<{ port: number, host: string, url: string, server: http.Server, wss: import('ws').WebSocketServer,
+ *                     lobby: import('./lobby.js').Lobby, network: import('./net.js').Network,
+ *                     registry: import('./net.js').SessionRegistry, packs: ReturnType<typeof createPluginRegistry>,
+ *                     content: import('./plugins/identity.js').VanillaContent, visual: ReturnType<typeof createVisualSets>,
+ *                     contents: ReturnType<typeof createContentSets>, hosts: ReturnType<typeof createMatchHosts>,
+ *                     versions: ReturnType<typeof createVersionSets>, versionHosts: ReturnType<typeof createMatchHosts> | null,
+ *                     traffic: ReturnType<typeof createTrafficCounter>, assetIndex: ReturnType<typeof createAssetIndex> | null,
+ *                     views: ReturnType<typeof createManifestViews> | null, studio: ReturnType<typeof createStudio> | null,
  *                     close: () => Promise<void> }>}
  */
 export async function startServer(opts = {}) {
-  const { port, host } = listenAddress(opts);
+  // A release ignores external-AI settings (one log line) and keeps the built-in bot (§37.66).
+  // An unknown strategy id still fails here, before data is loaded or the port is opened.
   const log = opts.log || makeLogger(!!opts.quiet);
+  if (releaseIgnoresExternalAi()) noteLlmIgnored(log);
+  try {
+    const strategy = getBotStrategy(process.env.SP_BOT_STRATEGY);
+    if (strategy.id === 'external') validateExternalConfig();
+  } catch (cause) {
+    throw new Error(`Invalid SP_BOT_STRATEGY: ${cause.message}. Unset SP_BOT_STRATEGY to use the original bot (legacy).`, { cause });
+  }
+  const { port, host } = listenAddress(opts);
   const { publicDir, dataDir, sharedDir, packsDir, pluginsDir } = serveDirs(opts);
   // `createStaticHandler` 的 `/sim/` 默认值，这里显式取同一个 —— 「核心先吃」要看到引擎真正会读的那个目录。
   const simDir = opts.simDir || path.join(ROOT, 'server', 'sim');
@@ -322,6 +367,32 @@ export async function startServer(opts = {}) {
   // worker 线程里一次 out-of-memory 会带走整个服务器，所以缺省是子进程）。
   const matchHostTransport = String(process.env.SP_MATCH_HOST || '').trim().toLowerCase() === 'worker' ? 'worker' : 'process';
   const hosts = createMatchHosts({ contents, log, options: { transport: matchHostTransport, maxWorkers: Math.max(1, policy.get().maxSets), ...(opts.matchHost || {}) } });
+  const versionCfg = versionsFrom(opts, log);
+  const versions = createVersionSets({ enabled: versionCfg.enabled, defaultId: versionCfg.default, dataDir, vanilla: content, defaultData: data, log });
+  // (the test options of matchHost apply to both pools, but never the version pool's kind or its own SP_MAX_VERSION_HOSTS)
+  const versionHosts = versions.nonDefault.length
+    ? createMatchHosts({ contents: versions, log, options: { transport: matchHostTransport, ...(opts.matchHost || {}), kind: 'version', maxWorkers: Math.max(1, versionCfg.maxHosts) } })
+    : null;
+  log.info(`[versions] enabled: ${versions.ids.map((id) => `${id} (${/** @type {any} */ (versionById(id)).label}${id === versions.defaultId ? ', default' : ''})`).join(', ')}`);
+  const simPool = createRoomWorkerPool({ data });
+  // Main-thread event-loop delay sampling (server/health/eventLoop.js): opt-in with SP_LOOP_SAMPLE=1, no worker pool involved, and a
+  // LOCAL log line per window (`[loop] p50=… p95=… p99=… max=… cpu=… mem=… rooms=… humans=… phase=…`) — deliberately not
+  // part of /healthz. This is what tells an operator whether a stall is the rehearsal / battle slice or something else.
+  const eventLoop = createEventLoopMonitor({
+    log,
+    windowMs: opts.loopSample?.windowMs,
+    counts: () => {
+      const s = lobby.stats();
+      const phases = new Set();
+      let rehearsals = 0;
+      for (const room of lobby.rooms.values()) {
+        if (room.match?.phase) phases.add(room.match.phase);
+        rehearsals += room.match?._rehearsalTasks?.size || 0;
+      }
+      return { rooms: s.rooms, matches: s.matches, humans: s.humans, spectators: s.spectators,
+        phase: [...phases].sort().join('+') || 'idle', rehearsals };
+    },
+  });
   const workshopAssets = workshopAssetsFor(workshopLoaded, workshopDir);
   // 包声明的只读路由（`pack.json.routes`, DESIGN §28.13）：绝对路径 → 包内 `.json`，带声明的 `Cache-Control`。
   // `mount` 让「核心先吃」这条判据（DESIGN §28.35）读到**真正的**核心挂载目录：与 createStaticHandler 那份同一组
@@ -410,13 +481,13 @@ export async function startServer(opts = {}) {
       ...(matchWrappers.length ? { MatchClass } : {}),
       workshop: { kits: workshopKits.kits, tokenKits: workshopKits.tokenKits, modules: workshopKits.modules, kitOwners: workshopKits.owners, tokenKitOwners: workshopKits.tokenOwners, kitBudgets: workshopKits.budgets, mods: workshopMods, hooks: workshopHooks.hooks, panels: workshopPanels.panels, assets: workshopModAssets, theme: workshopTheme.theme, meta: metaModules, roomAssets, battle: battleModules, battleInstallers, roomHooks: roomInstallers, transport: transport.transport, serverChannels: serverChannelMap },
     },
-    { data, log, content, plugins: roomSets, hosts },
+    { data, log, content, plugins: roomSets, hosts, versions, versionHosts, simPool },
   );
   // the content hashes of the art (built in the background once listening) and the manifests served with them
   const indexOptions = assetIndexOptionsFrom(opts, publicDir);
   const assetIndex = indexOptions ? createAssetIndex({ publicDir, log, ...indexOptions }) : null;
   const views = assetIndex ? createManifestViews({ dataDir, index: assetIndex, log }) : null;
-  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, workshopJson, workshopKitFiles, workshopKitDirs, workshopPanelFiles, workshopAssets, workshopRoutes, workshopResourceFiles, resourcePolicy, workshopI18n, modsJson, roomData: roomDataFace, workshopBattleFiles, modRoutes, voiceCdn: voiceCdn.overrides, assetIndex, views, visual, contents });
+  const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, simDir, packsDir, pluginsDir, packs, content, log, workshopJson, workshopKitFiles, workshopKitDirs, workshopPanelFiles, workshopAssets, workshopRoutes, workshopResourceFiles, resourcePolicy, workshopI18n, modsJson, roomData: roomDataFace, workshopBattleFiles, modRoutes, voiceCdn: voiceCdn.overrides, assetIndex, views, visual, contents, versions });
   // 插件工坊（DESIGN §34.9）：它自己的页面与 API，只对本机与本地网开放（路由层另一道门）。它只在被用到之后才
   // 盯 plugins/（热重载），而「房主是作者或独自一人」的房间自己跟随插件的改动。`studio: false` 关掉它。
   const studio = opts.studio === false ? null : createStudio({ publicDir, pluginsDir, dataDir, registry: packs, lobby, sessions: registry, log, fetch: opts.fetch });
@@ -426,10 +497,10 @@ export async function startServer(opts = {}) {
   const startedAt = Date.now();
   // The tag is per process (see buildTag): read the browser runtime once, here, not on every /healthz.
   resetBuildTag();
-  buildTag();
+  buildTag(ROOT, { servedVersionDirs: versions.servedDirs() });
 
   const traffic = createTrafficCounter();
-  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir), health: { startedAt, network, registry, lobby, modHealth: () => modMount.healthz(), content, traffic, assetIndex, views, trusted: trustedRuntime?.health }, log,
+  const server = http.createServer(createRequestHandler({ serveStatic, csp: process.env.SP_CSP === 'off' ? null : siteCsp(publicDir), health: { startedAt, network, registry, lobby, modHealth: () => modMount.healthz(), content, traffic, assetIndex, views, trusted: trustedRuntime?.health, versions, versionHosts }, log,
     records, accounts,
     httpLanes: opts.httpLanes, publicDir, trustProxy: network.opts.trustProxy,
     studio, trustedRuntime,
@@ -476,14 +547,21 @@ export async function startServer(opts = {}) {
     }
   } catch (e) {
     network.close(); // stop heartbeat/sweep timers of the half-built server
+    hosts.close();
+    versionHosts?.close();
     assetIndex?.close();
     studio?.close();
+    eventLoop?.close();
+    await simPool?.close();
     await trustedRuntime?.close();
     throw e;
   }
   server.on('error', (e) => log.error('[http] server error', e));
   // 内容哈希索引：**绑上端口之后**才在后台开跑（第一次构建等 ASSET_INDEX_DELAY_MS，只起停一次的测试什么也不读）。
   assetIndex?.start();
+  // started only once the server is listening: the first window then reports real counts, not a half-built hall
+  eventLoop?.start();
+
   const addr = server.address();
   const actualPort = typeof addr === 'object' && addr ? addr.port : port;
   // 包的服务端模块的 `onBoot`（DESIGN §28.14）：**绑上端口之后**才跑 —— 「服务起来了」对它们是一句真话，
@@ -503,6 +581,10 @@ export async function startServer(opts = {}) {
       // 对局宿主（一个内容集一个子进程 / worker）· 插件工坊 · 可信脚本运行器：与上面两条同一条纪律，
       // 每一件单独 try —— 一件关不掉不该拖住停机。
       try { hosts.close(); } catch (e) { log.error('[shutdown] match hosts', e); }
+      try { versionHosts?.close(); } catch (e) { log.error('[shutdown] version hosts', e); }
+      // after the lobby: every room is gone, so no rehearsal can still be waiting on a thread
+      try { await simPool?.close(); } catch (e) { log.error('[shutdown] simulation pool', e); }
+      eventLoop?.close();
       network.close();
       assetIndex?.close();
       studio?.close();
@@ -519,8 +601,25 @@ export async function startServer(opts = {}) {
 
   // `accounts` / `records` 也交出来（两份都是 `null` 时表示没开 `SP_ACCOUNTS`）：运维与测试要能确认
   // 「这个进程到底有没有账号」，而不是靠猜 `hello` 的回复。
-  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, accounts, records, traffic, assetIndex, views, studio, close };
+  return { port: actualPort, host: boundHost, url, server, wss, lobby, network, registry, packs, content, visual, contents, hosts, versions, versionHosts, accounts, records, traffic, assetIndex, views, studio, eventLoop, simPool, close };
+}
+
+export function roomCodeFromArgv(argv = process.argv.slice(2)) {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--room-code') {
+      const v = argv[i + 1];
+      if (v == null || v.startsWith('-') || !v.trim()) throw new RangeError('--room-code needs 4 letters or digits');
+      return parseRoomCode(v);
+    }
+    if (a.startsWith('--room-code=')) {
+      const v = a.slice('--room-code='.length);
+      if (!v.trim()) throw new RangeError('--room-code needs 4 letters or digits');
+      return parseRoomCode(v);
+    }
+  }
+  return null;
 }
 
 // `node server/index.js` / npm start: listen, print the banner, stop on SIGINT / SIGTERM (http/boot.js).
-if (isProcessEntry(import.meta.url)) runMain(startServer);
+if (isProcessEntry(import.meta.url)) runMain(() => startServer({ roomCode: roomCodeFromArgv() }));

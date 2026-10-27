@@ -8,7 +8,6 @@ import { PHASE, ERR } from '../../../shared/constants.js';
 import { generateDraft, applyCard, bountyBattles, isMultiRoundBounty, bountyCard } from '../choices.js';
 import { onPickCard } from '../botEmotes.js';
 import { weightedPick } from '../waves.js';
-import { botPickCard } from '../bot.js';
 import { OK, fail, DELAYS } from './common.js';
 import { SQUAD_SIZE } from '../unite100.mjs';
 
@@ -59,7 +58,7 @@ export class MatchSpDraft {
     const token = ++this._turnToken;
     if (!s.untimed) {
       const first = s.idx === 0;
-      const secs = first ? this.gd.timer('spFirst') : this.gd.timer('spTurn');
+      const secs = this.isSolo && this.gd.config.version?.rules?.soloTimed ? 150 : first ? this.gd.timer('spFirst') : this.gd.timer('spTurn');
       this.setDeadline(secs, () => {
         if (this.phase !== PHASE.SP_DRAFT || token !== this._turnToken) return;
         const ps = this.players.get(this.spTurn());
@@ -85,7 +84,11 @@ export class MatchSpDraft {
       if (!ps || !ps.botControlled) return;
       const avail = this.sp.cards.filter(c => this.spCardAvailable(c)).map(c => c.idx);
       if (!avail.length) return;
-      this._applyCard(ps, botPickCard(this, ps, this.sp.cards, avail));
+      const fallback = () => this._applyCard(ps, this.bot.pickCard(this, ps, this.sp.cards, avail));
+      if (this.bot.decide?.(this, ps, { kind: 'card',
+        valid: () => this.phase === PHASE.SP_DRAFT && token === this._turnToken,
+        complete: () => this.sp?.picks[ps.playerId] != null, fallback })) return;
+      fallback();
     });
   }
 
@@ -232,7 +235,9 @@ export class MatchSpDraft {
       const avail = sq.cards.filter((c) => this._spAvail(sq, c)).map((c) => c.idx);
       // [local-patch 2026-10-27] 卡被抽空时同上重入轮转入口（untimed 小队没有兜底计时器，这里 return 会永久停摆）
       if (!avail.length) { this._startSpSquadTurn(sq); return; }
-      this._applySpPick(ps, sq, botPickCard(this, ps, sq.cards, avail));
+      // [sync 2026-10-27] 上游 0.3.2 策略对象化：直调 bot.js 的 botPickCard（导入已随重构消失）改走
+      // this.bot.pickCard —— 同签名，且 SP_BOT_STRATEGY 换策略时小队路径同样生效。
+      this._applySpPick(ps, sq, this.bot.pickCard(this, ps, sq.cards, avail));
     });
   }
 
@@ -304,7 +309,7 @@ export class MatchSpDraft {
     if (!pending) return undefined;
     const indices = pending.cards.map((c, i) => i);
     const idx = mode === 'bot'
-      ? botPickCard(this, ps, pending.cards.map((c) => bountyCard(this.gd, c)), indices)
+      ? this.bot.pickCard(this, ps, pending.cards.map((c) => bountyCard(this.gd, c)), indices)
       : this.rngMeta.pick(indices);
     return this.pickPersonalChoice(ps, idx, pending.id);
   }

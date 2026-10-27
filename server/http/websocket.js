@@ -41,11 +41,22 @@ export const WS_MAX_PAYLOAD = 64 * 1024;
  *   * 包声明 `deflate: false` ⇒ **关**（`transportPolicy` 里 `winner.deflate !== true` 那条分支），这是显式关闭的
  *     唯一入口，不许静默回退成「引擎缺省开着」；
  *   * `attachWebSocket` 收到显式 `false` 时同样关（只有 `undefined` 才落回这一份缺省）。
+ * …) is compressed with an 8 KB window (serverMaxWindowBits 13) and zlib memLevel 7, and the window is KEPT from one
+ * message to the next (context takeover, the ws default: the extension's `server_no_context_takeover` is not
+ * negotiated) — the views repeat most of their keys and values (bonds, players, shop), so a frame costs a fraction of
+ * its standalone deflate. A 4-player match's frames (3,339 KiB of payload, 1,127 frames, one client's stream, measured
+ * over a real ws round trip): 809 KiB on the wire with per-message deflate and a 2 KB window, 284 KiB with the context
+ * kept — a window of 15 would reach about 160 KiB at about 140 KiB more zlib state per connection, so 13 is the balance
+ * (about 105 KiB of zlib state per connection); smaller frames (pong, ok) go out as they are. A connection that
+ * negotiates no extension, or one that caps the server window below ours, gets plain frames. Context takeover is
+ * negotiated per connection and reset with it: a client that offers `server_no_context_takeover` keeps getting
+ * standalone messages.
  */
 export const WS_DEFLATE = Object.freeze({
   threshold: 1024,
-  serverNoContextTakeover: true,
-  serverMaxWindowBits: 11,
+  // 上游 0.3.2 换成「保留压缩上下文 + 8 KB 窗口」：test/ws-compression 逐帧证明同一帧第二次只花很少字节
+  // （0.2.6 时我们这边是 noContextTakeover + 2 KB 窗口，压缩比明显更差）。这一条按上游走。
+  serverMaxWindowBits: 13,
   zlibDeflateOptions: Object.freeze({ memLevel: 7 }),
 });
 
@@ -64,6 +75,9 @@ export function narrowDeflateOffer(header) {
     return !!m && Number(m[1]) < WS_DEFLATE.serverMaxWindowBits;
   });
 }
+
+/** A per-network cap, as printed on boot ('unlimited' for 0). */
+function perNetwork(n) { return n > 0 ? n : 'unlimited'; }
 
 /**
  * `ws` 自己的 `perMessageDeflate.threshold` 缺省值（1024）。**只**用在「没声明 threshold」时的诊断文案里 ——
@@ -147,18 +161,33 @@ export function transportPolicy(policies, { log = null } = {}) {
  * The session stack of one server.
  * @param {{ MatchClass?: Function, seedFn?: () => number, [option: string]: any }} opts startServer() options
  * @param {{ data: object, log: object }} deps the game data the lobby's matches use, the logger
+ * @param {{ data: object, log: object, content?: { cs: string } | null,
+ *   plugins?: ReturnType<typeof import('../plugins/roomSets.js').createRoomSets> | null,
+ *   hosts?: ReturnType<typeof import('../match/host/index.js').createMatchHosts> | null,
+ *   simPool?: ReturnType<typeof import('../workers/roomPool.js').createRoomWorkerPool> | null,
+ *   versions?: ReturnType<typeof import('../versions.js').createVersionSets> | null,
+ *   versionHosts?: ReturnType<typeof import('../match/host/index.js').createMatchHosts> | null }} deps the game data the lobby's
+ *   matches use, the logger, the vanilla content (server/plugins/identity.js: welcome / room.state content, BattleSpec
+ *   cs), the room sets a room's host chooses from (room.setPlugins: visual and content sets), the match hosts a room with
+ *   gameplay plugins plays in (DESIGN §32.6), the official versions and their match hosts (DESIGN §37.23)
  * @returns {{ registry: SessionRegistry, lobby: Lobby, network: Network }}
  */
-export function createSessionStack(opts, { data, log, content = null, plugins = null, hosts = null }) {
-  const netOptions = netOptionsFrom(opts);
+export function createSessionStack(opts, { data, log, content = null, plugins = null, hosts = null, versions = null, versionHosts = null, simPool = null }) {
+  const netOptions = netOptionsFrom(opts, log);
   const registry = new SessionRegistry({ reconnectWindowMs: netOptions.reconnectWindowMs ?? NET_DEFAULTS.reconnectWindowMs });
-  const lobbyOptions = lobbyOptionsFrom(opts);
+  const lobbyOptions = lobbyOptionsFrom(opts, log);
   const lobby = new Lobby({
     registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, content, plugins, hosts, options: lobbyOptions,
     // 对局战绩（docs/RECORDS.md §3）：null = 没有 SP_ACCOUNTS ⇒ 结算点不落盘。
     records: opts.records || null,
     // 创意工坊 (docs/WORKSHOP.md): the behaviour layer of the installed packs travels with every match this lobby starts
     workshop: opts.workshop,
+    // 官方版本（DESIGN §37.22/§37.23）与模拟工作池：版本登记表、版本房的对局主机、这台服务器的池。
+    // 少了 versions，`dataFor()` 的版本分支永远拿不到数据 —— 版本房会拿进程面去打，
+    // spec 的 version 与数据对不上就是那条 RangeError。
+    versions,
+    versionHosts,
+    simPool,
   });
   // 包声明的**分发前钩子**（DESIGN §28.13, server/modDispatch.js）: assembled here, because it needs the framework's
   // own send helper and the Network it belongs to. `send` is late-bound to `network` on purpose — it must be
@@ -177,6 +206,15 @@ export function createSessionStack(opts, { data, log, content = null, plugins = 
     accounts: opts.accounts || null,
     options: modDispatch ? { ...netOptions, preDispatch: modDispatch.preDispatch, onConnection: modDispatch.onConnection } : netOptions,
   });
+
+  // The caps in effect, printed once when the stack is built, so the deploy log states the configuration the server is
+  // actually running with. A global cap of 0 is printed as 0 (it rejects every room / socket); a per-network 0 is
+  // printed as "unlimited". `log` is the quiet-aware logger, so a test server stays silent.
+  log.info(`[http] limits: rooms ${lobby.opts.maxRooms} (${perNetwork(lobby.opts.maxRoomsPerAddr)}/network), `
+    + `matches ${perNetwork(lobby.opts.maxMatchesPerAddr)}/network, `
+    + `sockets ${network.opts.maxConnections} (${perNetwork(network.opts.maxConnectionsPerAddr)}/network)`);
+
+    lobby.network = network;
   return { registry, lobby, network };
 }
 /**
@@ -196,6 +234,27 @@ function meterSocket(ws, req, traffic) {
   };
   ws.on('message', (data) => traffic.wsReceived(data));
   ws.once('close', () => traffic.wsClose(socket));
+}
+
+/** The options of a frame that must go out uncompressed. */
+const PLAIN = Object.freeze({ compress: false });
+
+/**
+ * Keep `WS_DEFLATE.threshold` true now that the window is kept.
+ * ws applies its own threshold only when the extension negotiated `*_no_context_takeover` (sender.js: the check sits
+ * behind that parameter) — with context takeover every message it is handed is compressed, so a pong or an `ok` would
+ * be too. The decision is made here instead, on the UTF-8 byte length of text frames, and only for the small ones:
+ * `compress: false` leaves the frame plain and the server's deflate window untouched.
+ */
+function applySendThreshold(ws) {
+  const send = ws.send;
+  ws.send = function sendWithThreshold(data, options, callback) {
+    if (typeof options === 'function') { callback = options; options = null; }
+    if (typeof data === 'string' && Buffer.byteLength(data, 'utf8') < WS_DEFLATE.threshold) {
+      return send.call(this, data, options ? { ...options, compress: false } : PLAIN, callback);
+    }
+    return send.call(this, data, options, callback);
+  };
 }
 
 /**
@@ -227,6 +286,7 @@ export function attachWebSocket(server, { network, log, lanes, perMessageDeflate
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD, perMessageDeflate: deflate, clientTracking: false });
   wss.on('connection', (ws, req) => {
+    applySendThreshold(ws);
     if (traffic) meterSocket(ws, req, traffic);
     network.handleConnection(ws, req);
   });

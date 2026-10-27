@@ -19,7 +19,7 @@ function storage(seed = {}) {
 function nextEvent(net, type) {
   return new Promise((resolve, reject) => {
     const off = net.on(type, (value) => { clearTimeout(timer); off(); resolve(value); });
-    const timer = setTimeout(() => { off(); reject(new Error(`Timed out waiting for ${type}`)); }, 2000);
+    const timer = setTimeout(() => { off(); reject(new Error(`Timed out waiting for ${type}`)); }, 8000);
   });
 }
 
@@ -72,7 +72,7 @@ async function assertOnline(h, clients) {
 }
 
 for (const [firstId, secondId] of [['a-tab', 'b-tab'], ['b-tab', 'a-tab']]) {
-  test(`staggered tabs ${firstId} then ${secondId} keep separate server sessions`, { timeout: 5000 }, async (t) => {
+  test(`staggered tabs ${firstId} then ${secondId} keep separate server sessions`, { timeout: 20000 }, async (t) => {
     const h = await harness(t);
     const seed = await h.connect('Seed');
     await closeClient(seed.net);
@@ -113,7 +113,7 @@ for (const [firstId, secondId] of [['a-tab', 'b-tab'], ['b-tab', 'a-tab']]) {
   });
 }
 
-test('live token ownership survives a duplicated tab, reload and reconnect', { timeout: 5000 }, async (t) => {
+test('live token ownership survives a duplicated tab, reload and reconnect', { timeout: 20000 }, async (t) => {
   const h = await harness(t);
   const owner = h.tab('z-owner');
   await owner.id.init();

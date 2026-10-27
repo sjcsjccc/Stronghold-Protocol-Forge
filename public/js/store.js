@@ -16,6 +16,11 @@
 //   clock       – { offset, rtt } server clock correction: serverNow ≈ Date.now() + offset
 //   ui          – small bits of local UI state shared between screens (pendingJoin / pendingPlaytest: the
 //                 `?room=` / `?playtest=` deep links, consumed by main.js once entered + online)
+//   ui          – small bits of local UI state shared between screens
+//   versions    – welcome.versions (the official versions the server enables, versions.js sanitizeVersions) or null: the
+//                 lobby's version switch is off; lobbyVersion – this browser's choice (`sp.pref.lobby.version`, an id);
+//                 replayVersion – the version of the stored match
+//                 统计数据 replays while it is open (screens/stats.js; null otherwise) — versions.js
 //
 // The store is framework-agnostic (get/set/subscribe); `useStore(selector)` binds it to Preact.
 // Updates are immutable at the top level: `set` shallow-merges a patch object, `patch(key, obj)`
@@ -99,11 +104,14 @@ export const initialState = Object.freeze({
   // nothing and broadcasts to everyone, so the client keeps what it has seen — a later joiner only sees newer lines.
   chatMessages: [],
   clock: { offset: 0, rtt: null, synced: false },
-  ui: { pendingJoin: null, pendingPlaytest: null, restoring: false, buildStale: false },
-  // 工坊 mod set (W-A, DESIGN §28.9): `available` = the packs `welcome.mods` declared (empty on a plain install, so the
-  // lobby's picker stays hidden), `selected` = the host's picks for the next room it creates. The values themselves live
-  // in public/js/roomMods.js; this slice is what the UI renders from.
-  roomMods: { available: [], selected: [] },
+    ui: { pendingJoin: null, pendingPlaytest: null, restoring: false, buildStale: false },
+    // 工坊 mod set (W-A, DESIGN §28.9): `available` = the packs `welcome.mods` declared（干净安装为空 ⇒ picker 不出现），
+    // `selected` = the host's picks for the next room it creates. 值本身住在 public/js/roomMods.js，这一格只是 UI 读的那份。
+    roomMods: { available: [], selected: [] },
+    // official versions (DESIGN §37.23, versions.js): welcome.versions（null = 开关关着）、本浏览器的选择、以及回放所属版本
+    versions: null,
+    lobbyVersion: (() => { const v = loadPref('lobby.version', null); return typeof v === 'string' && v.length <= 40 ? v : null; })(),
+    replayVersion: null,
 });
 
 /** The app-wide store singleton. */

@@ -111,7 +111,9 @@ describe('§28.14 boot(config)：冻结的只读配置快照', () => {
     //    `SP_CSP` = 站点 CSP 响应头开关（server/index.js，`off` 才关闭）；`SP_MATCH_HOST` = 对局宿主用子进程还是
     //    worker 线程；`SP_PLUGIN_SCRIPTS` = 插件脚本模式（沙箱开不开）。三者都是运维/安全面，包读到没有正当用途。
     //    ⚠️ **不要"好心"把它们加进上面的白名单** —— 尤其 `SP_PLUGIN_SCRIPTS` 是沙箱开关。
-    const ENGINE_PRIVATE_SP = ['SP_CSP', 'SP_MATCH_HOST', 'SP_PLUGIN_SCRIPTS'];
+    //    另有本仓库自己的 `SP_BOT_STRATEGY`（机器人策略选择，server/index.js 与 Match 都读）：同样属于
+    //    部署面 —— 包没有任何正当用途去知道这台机器用哪套机器人，装进来的包也不该能改它。
+    const ENGINE_PRIVATE_SP = ['SP_CSP', 'SP_MATCH_HOST', 'SP_PLUGIN_SCRIPTS', 'SP_BOT_STRATEGY'];
     // 反射源码：引擎里读过的 `process.env.SP_*` 必须两份都归类（新读一个而没归类就红）。
     const src = [path.join(ROOT, 'server/index.js'), path.join(ROOT, 'server/modModules.js'),
       path.join(ROOT, 'server/match/Match.js'), path.join(ROOT, 'server/match/botEmotes.js')]
@@ -229,8 +231,10 @@ describe('§28.30 transport：声明式配置 → 生效值', () => {
   test('没有声明 ⇒ 引擎的 WS_DEFLATE；多包声明按包 id 小的赢；生效值如实报', () => {
     const off = transportPolicy(new Map(), { log: quiet });
     assert.equal(off.perMessageDeflate.threshold, 1024);
-    assert.equal(off.perMessageDeflate.serverNoContextTakeover, true);
-    assert.equal(off.perMessageDeflate.serverMaxWindowBits, 11);
+    // 上游 0.3.2 改成本策略（保留上下文 + 8 KB 窗口 = 13 位）：test/ws-compression 同帧两发证明第二次几乎免费。
+    // 我们 0.2.6 那套（noContextTakeover + 11 位）压缩比更差，合并时按上游走。
+    assert.equal(off.perMessageDeflate.serverNoContextTakeover, undefined);
+    assert.equal(off.perMessageDeflate.serverMaxWindowBits, 13);
     assert.equal(off.perMessageDeflate.zlibDeflateOptions.memLevel, 7);
     assert.deepEqual(off.transport, { deflate: true, params: null, maxPayload: WS_MAX_PAYLOAD, threshold: 1024 });
 

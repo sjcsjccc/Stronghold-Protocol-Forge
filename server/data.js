@@ -17,6 +17,10 @@
 // (shared/workshop.js applyWorkshop) — additive, and an official id is only replaced when the pack declares it in
 // `pack.json.overrides`. `data/*.json` itself is never touched, so the official data stays byte-identical and a plain
 // install (no `workshop/` directory) behaves exactly as it did before the feature.
+// Official versions (shared/versions.js; docs/DATA.md "Official versions (M0)"): the default version is data/*.json, read by
+// getData(); another version's data lies in data/versions/<slug>/ (tools/build-data.mjs --version) and loads on demand
+// with getVersionData(id). loadData(DATA_DIR) reads the top level only, so it never sees data/versions/. Nothing in the
+// game reads a non-default version yet (M0).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { forgetOfficialBounds, rememberOfficialBounds } from '../shared/plugins/officialBounds.js';
 import { loadWorkshop, WORKSHOP_DIR } from './workshop.js';
 import { applyWorkshop, workshopSummary } from '../shared/workshop.js';
+import { DEFAULT_VERSION, versionById } from '../shared/versions.js';
 
 /** Repository root (…/Stronghold-Protocol). */
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -138,6 +143,50 @@ export function getData({ dir = DATA_DIR, log = console, workshopDir = WORKSHOP_
 export function resetData() {
   singleton = null;
   forgetOfficialBounds();
+}
+
+/** The files a non-default version's directory holds: DATA_FILES but the art manifest, which stays top-level only. */
+export const VERSION_DATA_FILES = Object.freeze(DATA_FILES.filter((f) => f !== 'assets'));
+
+/**
+ * The data directory of an official version: `root` itself for the default, root/<entry.dir> for another, null for an
+ * unknown id.
+ * @param {string} [id] a shared/versions.js id
+ * @param {string} [root] the default data directory
+ * @returns {string | null}
+ */
+export function versionDataDir(id = DEFAULT_VERSION, root = DATA_DIR) {
+  const entry = versionById(id);
+  if (!entry) return null;
+  return entry.dir ? path.join(root, ...entry.dir.split('/').filter(Boolean)) : root;
+}
+
+/** @type {Map<string, Readonly<Record<string, any>>>} */
+const versionCache = new Map();
+
+/**
+ * The data of an official version: getData() for the default; for another, its directory loaded once and cached
+ * (deep-frozen). The official-bounds cache is never filled from it: a plugin's caps follow the server's own data, and
+ * per-version caps are a matter of the version's match host (M1).
+ * @param {string} id a shared/versions.js id
+ * @param {{ log?: { warn: Function, error: Function, info?: Function } }} [opts]
+ * @returns {Readonly<Record<string, any>>}
+ */
+export function getVersionData(id, { log = console } = {}) {
+  if (id === DEFAULT_VERSION) return getData({ log });
+  const dir = versionDataDir(id);
+  if (!dir) throw new RangeError(`unknown version ${JSON.stringify(id)}`);
+  let data = versionCache.get(id);
+  if (!data) {
+    data = loadData(dir, { log, expected: VERSION_DATA_FILES });
+    versionCache.set(id, data);
+  }
+  return data;
+}
+
+/** Drop every cached non-default version (tests). */
+export function resetVersionData() {
+  versionCache.clear();
 }
 
 /**

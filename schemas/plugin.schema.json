@@ -79,8 +79,8 @@
     "api": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 2,
-      "description": "The plugin API level (this game: 1–2)."
+      "maximum": 3,
+      "description": "The plugin API level (this game: 1–3; 3 is additive — a v1 plugin still loads)."
     },
     "class": {
       "enum": [
@@ -2187,7 +2187,7 @@
             ],
             "properties": {
               "api": {
-                "const": 2
+                "minimum": 2
               }
             }
           }
@@ -2265,7 +2265,7 @@
             ],
             "properties": {
               "api": {
-                "const": 2
+                "minimum": 2
               }
             }
           }
