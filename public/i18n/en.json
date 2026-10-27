@@ -2616,5 +2616,8 @@
   "下载与导入的素材保存在这个浏览器里；手动清除网站数据会删除它们，iOS Safari 约 7 天不打开本站也可能清除。": "Downloaded and imported assets live in this browser. Clearing site data removes them; iOS Safari may also drop them after about 7 days away.",
   "浏览器已同意持久保存素材缓存。": "The browser granted persistent storage for the asset cache.",
   "已清理 {n} 个旧版本素材（{files} 个文件）。": "Pruned {n} outdated assets ({files} files).",
-  "没有需要清理的旧版本素材。": "Nothing to prune."
+  "没有需要清理的旧版本素材。": "Nothing to prune.",
+  "在大厅战局一览中显示": "Show in the lobby room list",
+  "仅凭房间码加入或观战，大厅一览不列出本房": "Join or spectate by room code only — the room is not listed",
+  "任何博士都可在「模拟邀约」中看到并加入本房": "Anyone can see and join this room from the lobby browse"
 }

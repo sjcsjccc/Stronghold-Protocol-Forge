@@ -427,6 +427,12 @@ export class Room {
     this.spectators = [];
     /** [local-patch 2026-10-21] the room's spectator-seat count — the HOST's dial (room.setSpectatorCap), default 5 */
     this.spectatorCap = SPECTATORS_DEFAULT;
+    /**
+     * [local-patch 2026-10-27] 是否出现在大厅 room.list 一览里 — the HOST's dial (room.setListed), default true
+     * （原行为：全部可枚举）。false = 不公开：room.list 不再列出它，加入/观战只剩房间码这一条路（码不变，
+     * 已在房间里的人不受影响）。roomCounts 的 `publicRooms` 同步排除。
+     */
+    this.listed = true;
     /** @type {any} running Match instance */
     this.match = null;
     /** @type {{ live: boolean, ended: boolean, disposed: boolean, match: any } | null} */
@@ -559,6 +565,8 @@ export class Room {
       // [local-patch 2026-10-21] 观战席数量：present ONLY when the host moved it off the default, so a room that never
       // touched the dial keeps its frame byte-for-byte what it was (the same convention as `seatCap` below)
       ...(this.spectatorCap !== SPECTATORS_DEFAULT ? { spectatorCap: this.spectatorCap } : {}),
+      // [local-patch 2026-10-27] 公开开关：仅在房主关掉时下发（默认 true 不带键，帧稳定惯例同上）
+      ...(this.listed === false ? { listed: false } : {}),
       // 房内聊天模式：客户端据此决定要不要显示输入框。**服务端强制**（`chat` / `quickMsg` 各自再判一次），
       // 这个字段只是让界面说实话。
       chatMode: this.chatMode,
@@ -885,6 +893,8 @@ export class Lobby {  /**
     try {
       const rooms = [];
       for (const r of this.rooms.values()) {
+        // [local-patch 2026-10-27] 房主关掉公开的房间不进一览（加入/观战只剩房间码）；未设置 = 原行为全列
+        if (r.listed === false) continue;
         const seats = (r.seats ?? []).filter(s => s && !s.left);
         rooms.push({
           code: r.code,
@@ -914,8 +924,11 @@ export class Lobby {  /**
       spectators += r.spectators.length;
     }
     out.matches = matches; out.humans = humans; out.bots = bots; out.spectators = spectators;
-    // 今天 publicRooms === total（见上）。共用的这个 `rooms.size` 就是两者唯一的来源。
-    return { publicRooms: this.rooms.size, total: this.rooms.size };
+    // [local-patch 2026-10-27] 上方注释预留的改造点：「inviteOnly 落地后，publicRooms 排除它」——room.setListed
+    // 即那个开关（listed=false ≈ inviteOnly）。total（/healthz 的 rooms）仍是在册全量。
+    let publicRooms = 0;
+    for (const r of this.rooms.values()) if (r.listed !== false) publicRooms++;
+    return { publicRooms, total: this.rooms.size };
   }
 
   /** Counters for /healthz, plus the mod-set digest when this server runs one (DESIGN §28.9: `welcome`, `/healthz` and
@@ -1078,6 +1091,7 @@ export class Lobby {  /**
       case 'room.setSeatCap': return this.setSeatCap(session, msg);
       case 'room.setAiPicksLast': return this.setAiPicksLast(session, msg);
       case 'room.setSpectatorCap': return this.setSpectatorCap(session, msg); // [local-patch 2026-10-21]
+      case 'room.setListed': return this.setListed(session, msg); // [local-patch 2026-10-27] 大厅一览公开开关（房主）
       // 房间内改本房间的模组集合（G1/G2，docs/WORKSHOP.md §1.9.3）：房主、开局前、且没有真人已就绪
       case 'room.mods': return this.setRoomMods(session, msg);
       case 'room.addBot': return this.addBot(session);
@@ -1573,6 +1587,26 @@ export class Lobby {  /**
     if (room.spectatorCap !== cap) {
       this.dropReplay(room, session.playerId);
       room.spectatorCap = cap;
+      this.broadcastState(room);
+    }
+    return OK;
+  }
+
+  /**
+   * [local-patch 2026-10-27] room.setListed { code, listed }: the HOST toggles whether this room shows up in the
+   * lobby's `room.list` (the join/spectate browse). Default true (原行为). `listed:false` hides the room from the
+   * list entirely — the code is the only way in; seated members and an in-progress match are untouched. Works in the
+   * lobby or mid-match, any room mode (solo included: a hidden solo room stops advertising its existence).
+   */
+  setListed(session, { code, listed }) {
+    const room = this.roomOf(session);
+    if (!room) return fail(ERR.NOT_IN_ROOM);
+    if (room.code !== code) return fail(ERR.NOT_IN_ROOM);
+    if (room.hostId !== session.playerId) return fail(ERR.NOT_HOST);
+    const want = listed === false ? false : true;
+    if (room.listed !== want) {
+      this.dropReplay(room, session.playerId);
+      room.listed = want;
       this.broadcastState(room);
     }
     return OK;

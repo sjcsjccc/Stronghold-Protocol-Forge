@@ -181,20 +181,18 @@ test('startMatch forwards test only for a room created with the flag', (t) => {
   assert.equal(seen[1].hostId, host2.playerId);
 });
 
-test('wireOptions and setHost stay silent unless the match was created as a test', () => {
-  assert.deepEqual(wireOptions({ roomCode: 'ABCD', mode: 'solo', hostId: 'p', test: false }), { roomCode: 'ABCD', mode: 'solo' });
+// [local-patch 2026-10-27] 口径按补丁⑦b（2026-10-21）对齐：hostId 随每个 worker 载荷走（插件局房主倍速
+// 需要它），setHost 不再只对测试局生效（房主迁移也要进沙箱）——旧断言钉的是拆除前的 test-only 行为。
+test('wireOptions carries hostId for every match; setHost applies outside test rooms too', () => {
+  assert.deepEqual(wireOptions({ roomCode: 'ABCD', mode: 'solo', hostId: 'p', test: false }), { roomCode: 'ABCD', mode: 'solo', hostId: 'p' });
   assert.deepEqual(
     wireOptions({ roomCode: 'ABCD', mode: 'solo', hostId: 'p', test: true }),
-    { roomCode: 'ABCD', mode: 'solo', test: true, hostId: 'p' },
+    { roomCode: 'ABCD', mode: 'solo', hostId: 'p', test: true },
   );
   const posts = [];
   const normal = new MatchProxy({ host: { post: (m) => posts.push(m) }, matchId: 'n', opts: { roomCode: 'ABCD', test: false, hostId: 'p' } });
   normal.setHost('q');
-  assert.deepEqual(posts, []);
-  assert.equal(normal.opts.hostId, 'p');
-  const testMatch = new MatchProxy({ host: { post: (m) => posts.push(m) }, matchId: 't', opts: { roomCode: 'ABCD', test: true, hostId: 'p' } });
-  testMatch.setHost('q');
-  assert.equal(testMatch.opts.hostId, 'q');
+  assert.equal(normal.opts.hostId, 'q');
   assert.equal(posts.at(-1).method, 'setHost');
   assert.deepEqual(posts.at(-1).args, ['q']);
 });
@@ -872,13 +870,15 @@ test('co-op jump eliminates only doctors already at LP 0; boss prep waits, hidde
   assert.deepEqual(collectViolations(hid.m), []);
 });
 
-test('real-scheduler test matches keep 8 ms slices; virtual time stays unbounded', (t) => {
+// [local-patch 2026-10-27] 口径按补丁①（2026-10-19）对齐：HEADLESS_SLICE_MS 8→40（AI 战场切片预算），
+// bot 排练切片仍是 8；虚拟时钟两档都无界不变。
+test('real-scheduler test matches keep their slice budgets; virtual time stays unbounded', (t) => {
   const seats = [{ playerId: 'p', seat: 0, name: 'P', connected: true }];
   const quiet = { send() {}, broadcast() {}, onEnd() {}, log: { info() {}, warn() {}, error() {} } };
   const real = new Match({ mode: 'solo', difficulty: 'NORMAL', test: true, hostId: 'p', seats, data: DATA, scheduler: new RealScheduler(), ...quiet });
   t.after(() => real.dispose());
   assert.equal(real.botSliceMs, 8);
-  assert.equal(real.headlessSliceMs, 8);
+  assert.equal(real.headlessSliceMs, 40);
   const virt = new Match({ mode: 'solo', difficulty: 'NORMAL', test: true, hostId: 'p', seats, data: DATA, scheduler: new VirtualScheduler(), ...quiet });
   t.after(() => virt.dispose());
   assert.equal(virt.botSliceMs, Infinity);
@@ -886,7 +886,7 @@ test('real-scheduler test matches keep 8 ms slices; virtual time stays unbounded
   const plain = new Match({ mode: 'solo', difficulty: 'NORMAL', seats, data: DATA, scheduler: new RealScheduler(), ...quiet });
   t.after(() => plain.dispose());
   assert.equal(plain.botSliceMs, 8);
-  assert.equal(plain.headlessSliceMs, 8);
+  assert.equal(plain.headlessSliceMs, 40);
 });
 
 test('spectators share the rate bucket; oversized args never reach the journal', (t) => {

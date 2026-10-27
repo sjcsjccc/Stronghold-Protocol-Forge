@@ -42,6 +42,7 @@ import { toDataSource, withUnitLoadouts } from './simdata.js';
 import { isPotential, isCultivate } from '../../shared/potential.js';
 import { isContentHash } from '../../shared/plugins/identity.js';
 import { BOSS_POOL_MIN_HP } from './constants.js';
+import { installInfiniteRule } from './infiniteRule.js'; // [local-patch 2026-10-27] 超限 spec 侧同装（见 createBattleFromSpec）
 
 export const SPEC_VERSION = 1;
 
@@ -252,6 +253,12 @@ export function createBattleFromSpec(spec, dataSource, opts = {}) {
   // 的行为与从前逐字节相同。
   if (Array.isArray(opts.battleInstallers) && opts.battleInstallers.length) battleOpts.battleInstallers = opts.battleInstallers;
   const b = new BattleClass(battleOpts);
+  // [local-patch 2026-10-27] 超限局的 spec 构建（浏览器权威场 / 显示副本 / 服务端 spec 验证）与 combat.js
+  // newBattle 的服务端直构场同装 infiniteRule（CC 抗性/霸体 + 词条静态修正 traitRule）——本文件头注的原则
+  // 「same spec + same data ⇒ same result on every machine」：此前只有服务端直构装、spec 路径全裸奔，真人
+  // 权威场里词条完全不生效、且与 AI 代跑场行为分叉。判定用 flags.overlimit（combat.js/bossRounds.js 只在
+  // 超限局注入；installInfiniteRule 自带幂等守卫）。普通局 flags 没有这个键 ⇒ 一个字节都不动。
+  if (battleOpts.flags && battleOpts.flags.overlimit && BattleClass === Battle) installInfiniteRule(b);
   b.battleId = s.battleId ?? null;
   return b;
 }

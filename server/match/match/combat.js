@@ -86,7 +86,7 @@ export class MatchCombat {
       // [local-patch 2026-10-22] 超限词条：静态修正合并进 flags（普通模式 this.traitMods 为空，等价于原来的对象）
       flags: this._rmSpecFlags({ layerGainsEnabled: true, ...this.gd.dp, ...(this.isInfinite ? { overlimit: true } : {}), ...(this.traitFlagBundle ? this.traitFlagBundle() : {}) }),
       fieldId: `n:${ps.playerId}`,
-      enemyOverrides: wave.overrides,
+      enemyOverrides: { ...(wave.overrides || {}), ...(this.specialOverrides ? this.specialOverrides() : {}) }, // [local-patch 2026-10-27] 特化卡数值接线（上游有、漏移植；此前 specialOverrides 全仓零调用）
       waveId: wave.templateId,
       // 限伤 override for the CLIENT-run spec (shared/constants.js bossHitLimitFrom): only present when a deployment
       // set it, so an unconfigured server sends byte-for-byte the old spec (and server/sim/spec.js is left untouched

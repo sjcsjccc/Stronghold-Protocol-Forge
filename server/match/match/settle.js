@@ -88,9 +88,12 @@ export class MatchSettle {
       }
       // [local-patch 2026-10-22] 超限词条（上游 0.3.1.1）：再起 / 苛责 按完美作战回血或扣血；共栖 / 离散 调整本回合的层数增益。
       // 普通模式 this.traitSettleBundle 不存在 → 整段跳过。
+      // [local-patch 2026-10-27] +富足/贫乏（funds）、集群（giveItems）、蜂拥（addElite）——bundle 早就
+      // 产出这三键，此前无消费者，卡面承诺全部落空。
       const ts = this.traitSettleBundle ? this.traitSettleBundle() : null;
       // 全 0 的 bundle 等价于「没有词条」—— 普通模式永远走这一支，行为和以前完全一致。
-      const tsActive = ts && (ts.lpOnPerfect || ts.lpOnNotPerfect || ts.layerBonus || ts.stripLayers);
+      const tsActive = ts && (ts.lpOnPerfect || ts.lpOnNotPerfect || ts.layerBonus || ts.stripLayers
+        || ts.funds || (Array.isArray(ts.giveItems) && ts.giveItems.length) || ts.addElite);
       if (tsActive) {
         const perfect = counted === 0 && r.perfect !== false;
         const dlp = (perfect ? ts.lpOnPerfect : 0) + (perfect ? 0 : ts.lpOnNotPerfect);
@@ -99,6 +102,20 @@ export class MatchSettle {
           if (dlp > 0) ps.stats.lpGained = (ps.stats.lpGained || 0) + dlp;
           else ps.stats.lpLost += -dlp;
         }
+        // [local-patch 2026-10-27] 富足/贫乏：每回合 ±N 资金（贫乏钳 0；走 funds 直加，走的是同一份账本）
+        if (ts.funds) {
+          const before = ps.funds;
+          ps.funds = Math.max(0, ps.funds + ts.funds);
+          if (ps.funds > before) ps.stats.fundsGained = (ps.stats.fundsGained || 0) + (ps.funds - before);
+        }
+        // [local-patch 2026-10-27] 集群：发【变形同构体】（acquireItem 走物品池台账，守恒式不破；池空静默跳过）
+        if (Array.isArray(ts.giveItems)) {
+          for (const itemId of ts.giveItems) {
+            try { ps.acquireItem(itemId, { source: 'trait' }); } catch (e) { this.reportError('trait giveItem', e); }
+          }
+        }
+        // [local-patch 2026-10-27] 蜂拥：下一轮额外精英（traitDraft.queueSwarmElites 走 traitSpawn 管线）
+        if (ts.addElite && this.queueSwarmElites) this.queueSwarmElites(ts.addElite);
         if (ts.layerBonus) {
           // 本回合战斗内获得的层数额外 ±1（逐条盟约）
           for (const [bondId, n] of Object.entries(r.layerGains || {})) {

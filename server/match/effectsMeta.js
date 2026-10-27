@@ -539,6 +539,9 @@ export function makeCtx(m, ps, source, hook, ev = null, preview = null) {
     difficulty: m.difficulty,
     isSolo: m.isSolo,
     isCoop: !m.isSolo,
+    // [local-patch 2026-10-27] 超限标记：builtinMeta / items/meta.js 的「核心盟约超限优先」分支读 ctx.isInfinite
+    // （此前 ctx 没有这个键，分支永不触发——上游同病）。
+    isInfinite: m.isInfinite === true,
     data: gd.raw,
     gd,
     rng,

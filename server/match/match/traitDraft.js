@@ -9,7 +9,7 @@
 
 import { PHASE, ERR } from '../../../shared/constants.js';
 import { DELAYS } from './common.js';
-import { drawTraitCards, traitFlags, TRAIT_SETTLE, SPECIAL_STATS, SPECIALS } from '../traits.js';
+import { drawTraitCards, traitFlags, TRAIT_SETTLE, SPECIAL_STATS, SPECIALS, MONSTERS } from '../traits.js';
 
 const OK = { ok: true };
 const fail = (error, why) => (why ? { error, why } : { error });
@@ -183,17 +183,35 @@ export class MatchTraitDraft {
     if (!list.length || !this.wave) return [];
     const wave = this.wave;
     const spawns = Array.isArray(wave.spawns) ? wave.spawns : [];
-    const mid = spawns.length ? Number(spawns[Math.floor(spawns.length / 2)].time) || 4 : 4;
+    const midSpawn = spawns.length ? spawns[Math.floor(spawns.length / 2)] : null;
+    const mid = spawns.length ? Number(midSpawn.time) || 4 : 4;
+    // [local-patch 2026-10-27] 词条怪吃当轮缩放：mods 从同波中段条目取样（此前恒 {}，R16+ 的卡怪是
+    // 白给的基础数值）；蜂拥条目标 elite 让预览/统计认得。
+    const waveMods = midSpawn && midSpawn.mods && typeof midSpawn.mods === 'object' ? midSpawn.mods : {};
     return list.map((x, i) => ({
       time: mid + i * 2.5,
       enemyKey: x.enemyKey,
       routeIndex: i % Math.max(1, (wave.routes || []).length),
       count: 1,
       interval: 0,
-      mods: {},
-      preview: { fly: false, elite: false, boss: true },
+      mods: { ...waveMods },
+      preview: { fly: false, elite: !!x.elite, boss: !x.elite },
       _traitChosen: true,
     }));
+  }
+
+  /**
+   * [local-patch 2026-10-27] 蜂拥（swarm，TRAIT_SETTLE.addElite）：结算时把 N 只随机精英排进下一轮出场。
+   * 复用 traitSpawn 管线（combat.js 的合并点），与词条怪同语义：不带悬赏、按当轮缩放。
+   * @param {number} n
+   */
+  queueSwarmElites(n) {
+    if (!Number.isInteger(n) || n <= 0 || !MONSTERS.ELITE.length) return;
+    this.traitSpawn = this.traitSpawn || [];
+    for (let i = 0; i < n; i++) {
+      const m = this.rngMeta.pick(MONSTERS.ELITE);
+      this.traitSpawn.push({ enemyKey: m.key, name: m.name, round: this.round + 1, special: null, elite: true });
+    }
   }
 
   /**

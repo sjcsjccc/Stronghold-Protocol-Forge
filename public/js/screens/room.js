@@ -178,6 +178,8 @@ export const CARD_SYNC = !!C2S && Object.hasOwn(C2S, 'room.card');
 // what else the server offers (its own shared/protocol.js): 开始搜寻 needs match.queue, 私密房间 room.setPrivate
 const CAN_QUEUE = !!C2S && Object.hasOwn(C2S, 'match.queue');
 const CAN_PRIVATE = !!C2S && Object.hasOwn(C2S, 'room.setPrivate');
+// [local-patch 2026-10-27] 大厅一览公开开关（room.setListed）：房主控制本房是否出现在「模拟邀约」一览
+const CAN_LISTED = !!C2S && Object.hasOwn(C2S, 'room.setListed');
 
 
 /** 名片干员 picker: search, rarity, the operators' avatars; 默认 clears the pick. */
@@ -433,7 +435,7 @@ function RoomProtocol({ room, variant, onClose, onPick, busy, leaving = false })
 }
 
 /** ⚙ of the bottom pill: 私密房间, 人数上限 (with the 10-seat constants), AI 队友最后选择, 无限火力 branch. */
-function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSeatCap, onSpecCap, onAiLast, onVariant, onClose, leaving = false }) {
+function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSeatCap, onSpecCap, onListed, onAiLast, onVariant, onClose, leaving = false }) {
   const coop = !isSoloRoomMode(room.mode); // [local-patch 2026-10-22] solo_infinite 渲染成独立模拟页
   const host = facts.isHost;
   useEffect(() => {
@@ -448,6 +450,8 @@ function RoomOptions({ room, facts, myId, busy, online, variant, onPrivate, onSe
       <span>${t('私密房间')}<small>${room.private ? t('仅凭同盟密钥或邀请加入，不能搜寻队友') : t('公开大厅可见，可以搜寻队友')}</small></span></label>` : null}
     <${SeatCapSetter} room=${room} isHost=${host} onPick=${onSeatCap} />
     ${coop ? html`<${SpectatorCapSetter} room=${room} isHost=${host} onPick=${onSpecCap} />` : null}
+    ${CAN_LISTED ? html`<label class="rs-opt"><input type="checkbox" checked=${room.listed !== false} disabled=${!host || !!busy || !online} onChange=${(e) => onListed(e.currentTarget.checked)} />
+      <span>${t('在大厅战局一览中显示')}<small>${room.listed === false ? t('仅凭房间码加入或观战，大厅一览不列出本房') : t('任何博士都可在「模拟邀约」中看到并加入本房')}</small></span></label>` : null}
     <${AiLastToggle} option=${aiLastOption(room, myId)} busy=${busy} onToggle=${onAiLast} />
     ${room.random === true ? html`<div class="rs-opt rs-opt--variant"><span>${t('模式分支')}</span>
       <div class="dpick" role="radiogroup" aria-label=${t('模式分支')}>
@@ -814,6 +818,8 @@ export function RoomScreen() {
   const setSeatCap = (seatCap) => run('seatcap', () => net.request('room.setSeatCap', { code: room.code, seatCap }));
   // [local-patch 2026-10-21] 观战席数量：the host's dial, live in the lobby and mid-match (the spectate gate reads it)
   const setSpecCap = (cap) => run('speccap', () => net.request('room.setSpectatorCap', { code: room.code, cap }));
+  // [local-patch 2026-10-27] 大厅一览公开开关：房主随时可切（对局中同样生效，一览下一次 4s 刷新即消失/出现）
+  const setListed = (listed) => run('listed', () => net.request('room.setListed', { code: room.code, listed }));
   // 「添加 AI 队友」：包版房间把空席位的入口只留了「邀请」，而服务端 `room.addBot` / `room.removeBot` 一直都在
   // （HEAD 的引擎房间有这两个按钮，见本次 CHANGELOG 0.18.4）。按业主裁定补回**入口**，协议与服务端一字未动。
   const addBot = () => run('add', () => net.request('room.addBot', {}));
@@ -956,7 +962,7 @@ export function RoomScreen() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" fill-rule="evenodd" /></svg>
           </button>
           ${optsShown ? html`<${RoomOptions} room=${room} facts=${facts} myId=${me.playerId} busy=${busy} online=${online} variant=${variant}
-            onPrivate=${setPrivate} onSeatCap=${setSeatCap} onSpecCap=${setSpecCap} onAiLast=${setAiLast} onVariant=${setVariant} onClose=${() => setOpts(false)} leaving=${optsLeaving} />` : null}
+            onPrivate=${setPrivate} onSeatCap=${setSeatCap} onSpecCap=${setSpecCap} onListed=${setListed} onAiLast=${setAiLast} onVariant=${setVariant} onClose=${() => setOpts(false)} leaving=${optsLeaving} />` : null}
         </div>
       </div>
       <div class="rs-foot__right">

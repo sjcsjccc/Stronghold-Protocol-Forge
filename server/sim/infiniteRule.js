@@ -2,6 +2,7 @@
 // 专用于高波次（R16+），防止大量 CC 判定、高频攻击与怪物堆叠导致的 CPU 逻辑阻塞。
 
 import { MIN_ATTACK_INTERVAL_SEC, getInfiniteCcResist } from '../../shared/infiniteMode.js';
+import { installTraitRule } from './traitRule.js';
 
 export const CC_STATUS_KEYS = new Set([
   'stun', 'freeze', 'sleep', 'silence', 'disarm', 'fear', 'levitate', 'palsy', 'bind', 'cold', 'fragile',
@@ -21,7 +22,7 @@ export const TENACITY_THRESHOLD_SEC = 6.0; // 累计受控满 6 秒即爆发霸�
  * @param {object} opts
  */
 export function installInfiniteRule(battle, opts = {}) {
-  if (!battle) return;
+  if (!battle || battle.infinite) return; // 幂等：newBattle 与 spec 构建两条路不会重复装
   const round = Number(battle.round) || 1;
 
   battle.infinite = {
@@ -40,6 +41,10 @@ export function installInfiniteRule(battle, opts = {}) {
       battle.infinite.lastTargetingClearTick = battle.tickCount;
     }
   });
+
+  // [local-patch 2026-10-27] 超限词条静态修正接线（traits.js 的 11 键此前只注入 flags 无消费者；
+  // 无词条键时 installTraitRule 是纯 no-op）
+  installTraitRule(battle);
 }
 
 /**

@@ -8,6 +8,7 @@ import { makeBuff, STATUS, RESIST_STATUSES } from '../buffs.js';
 import { palsyBuff } from '../damage.js';
 import { evadesGround } from '../targeting.js';
 import { stampFear } from '../fear.js';
+import { shouldBlockInfiniteCc } from '../infiniteRule.js';
 
 export class BattleStatus {
   addBuff(unit, b) {
@@ -162,6 +163,11 @@ export class BattleStatus {
     const src = opts.source;
     if (src && src.side && src.side !== target.side && target.s.flags.invulnerable && target.s.flags.untargetable) return false;
     if (!opts.ignoreSelect && target.s.flags.liftoff && evadesGround(src, target)) return false;
+    // [local-patch 2026-10-27] 超限模拟（上游 0.3.1.1 有、此前漏移植）：波次 CC 抗性递增 + 精英/Boss 6s/4s
+    // 霸体防木桩保护（性能节流）。普通战斗 battle.infinite 不存在 → 一行都走不到。
+    if (this.infinite && shouldBlockInfiniteCc(this, target, key, opts)) {
+      return false;
+    }
     const tpl = STATUS[key] || { flags: { [key]: true } };
     let duration = opts.duration == null ? Infinity : Number(opts.duration);
     let value = opts.value;

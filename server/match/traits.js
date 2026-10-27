@@ -187,6 +187,9 @@ export function traitFlags(traitId) {
     case 'bulwark': return { enemyDefMul: 1.15, enemyResAdd: 6 };
     case 'bloodlust': return { allyAtkByMissingHp: 0.5, allyAtkByMissingHpFloor: 0.3 };
     case 'decay': return { allyAtkByMissingHp: -0.3, allyAtkByMissingHpFloor: 0.3 };
+    // [local-patch 2026-10-27] 再生/腐蚀补数据层：此前两条卡连 flag 都没有，纯文案。接线在 sim/traitRule.js（2 秒一跳）。
+    case 'regen': return { traitRegenPct: 0.03 };
+    case 'corrode': return { traitCorrodePct: 0.01 };
     default: return {};
   }
 }

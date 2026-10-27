@@ -735,6 +735,13 @@ export const C2S = {
     code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v),
     cap: (v) => isInt(v, 0, MAX_SPECTATORS),
   },
+  // 大厅一览公开开关 ([local-patch 2026-10-27] room.setListed): the HOST toggles whether the room shows up in the
+  // lobby's room.list browse. Default true (原行为全列)。false = 仅房间码可入，一览与 publicRooms 计数都不再含它。
+  // `code` 的口径与 room.setSpectatorCap 相同：点名的房间 ≠ 所在房间 ⇒ NOT_IN_ROOM，绝不默默改别的房。
+  'room.setListed': {
+    code: (v) => isStr(v, ROOM_CODE_LEN + 2) && /^[A-Za-z0-9]+$/.test(v),
+    listed: (v) => typeof v === 'boolean',
+  },
   // 房间内改本房间的**模组集合**（G1；docs/WORKSHOP.md §1.9.3）：房主、开局前、且**没有任何真人已就绪**时，
   // 把这一房声明的集合换成另一个（`[]` = 改回「不声明」，即跑服务器加载的全部）。形状与 `room.create.modIds`
   // **逐字同形**（同一格的判据、同一个 `MAX_ROOM_MODS` 上限）—— 一条声明两处写法就是两个会漂的真相。

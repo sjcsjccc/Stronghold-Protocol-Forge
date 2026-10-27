@@ -647,7 +647,12 @@ export function heal(battle, source, target, amount, opts = {}) {
   if (!self && ((target.s.flags.noHeal && !through) || (target.profile && target.profile.noHeal))) return 0;
   const regen = !!opts.regen;
   if (target.s.flags.healFree && !regen && !opts.ignoreHealFree && !through) return 0;
+  // 盛发 / 萎靡（超限词条，上游 0.3.1.1 同款）：本局我方受到的治疗与生命回复全局倍率（含 regen 路径——
+  // 卡面写明「治疗和生命回复效果」）。普通战斗没有这个 flag → 乘 1，逐字节不变。[local-patch 2026-10-27]
+  const traitHeal = target.side === 'ally' && battle.flags && Number.isFinite(battle.flags.allyHealMul)
+    ? Math.max(0, battle.flags.allyHealMul) : 1;
   let amt = regen ? amount : amount * (source && source.s ? source.s.healingDealtMul : 1) * target.s.healingTakenMul;
+  if (traitHeal !== 1) amt *= traitHeal;
   if (!(amt > 0) || !Number.isFinite(amt)) return 0;
   if (battle._hooks.heal) {
     const ctx = { source, target, amount: amt, opts };
