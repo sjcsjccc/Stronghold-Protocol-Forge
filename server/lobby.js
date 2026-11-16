@@ -1273,7 +1273,11 @@ export class Lobby {
       return fail(ERR.MOD_UNKNOWN, `this server does not run the mod pack(s) (${unknown}); available: ${available}`);
     }
     // the official version (header "Official versions"): left out, the server's default
-    const version = askedVersion ?? this.defaultVersion();
+    // [local-patch 2026-11-17] 超限（infinite/solo_infinite）固定跑 DEFAULT_VERSION（第二期下半）数据：超限的
+    // 绝境曲线/波次/词条数值都校准在它上面，且规程·序列Ⅰ（0.4.0 起的大厅默认版本）没有超限的模式条目——
+    // offered() 查表为空会把建房拒成 VERSION_UNSUPPORTED（业主实测「该版本不能用于当前房间」）。显式传来的
+    // 版本一并归位；普通模式的版本选择不受影响。
+    const version = isInfiniteRoomMode(mode) ? DEFAULT_VERSION : (askedVersion ?? this.defaultVersion());
     if (!this.versionEnabled(version)) return fail(ERR.VERSION_UNKNOWN);
     if (!this.offered(version, mode).length) return fail(ERR.VERSION_UNSUPPORTED, `${version} has no ${mode} rooms`);
     if (!this.versionAvailable(version)) return fail(ERR.VERSION_UNSUPPORTED, 'the data of this version is not available');
