@@ -495,7 +495,7 @@ per row:
 
 The client has no plugin surface: `public/js/main.js:75` is a frozen `SCREENS` object, `:311` resolves a route as
 `SCREENS[route] || LobbyScreen`, and the routes themselves come from `selectRoute` (`public/js/store.js:126-136`). What
-it does have is the pattern this design copies: **hosts mounted once at the root** — `UiHosts` (`public/js/main.js:345`,
+it does have is the pattern this design copies: **hosts mounted once at the root** — `UiHosts` (`public/js/main.js:582`,
 `public/js/ui/components.js:866`), `GuideHost` (`:318`, `public/js/ui/guide.js:106`), `LoadoutHost`, `SupportHost`.
 
 **Implemented (B2 段).** The registration point is `public/js/ui/extensions.js` (`createPanelRegistry`), the declaration
@@ -2432,7 +2432,7 @@ node --test test/modSurface.test.js
 | 面板读得到的 | 既有 S2C 帧 | 帧里的哪一格 | 粒度 |
 |---|---|---|---|
 | **每人总伤害** | `m.result`（`shared/protocol.js:780`） | `players[].stats.dmgDealt`（同处还有 `bossDamage` / `healingDone` / `kills` / `leaks` / `perfectRounds`；`server/match/results.js:156-161` 组装，`ui/stats.js` 与 `screens/result.js` 的战绩页读的就是它） | 整场**结算时**一次，按玩家 |
-| **实时领袖伤害** | `b.pool`（`shared/protocol.js:786`） | `acked[fieldId]` = 那一场累计计入的领袖伤害（`server/match/match/bossRounds.js:190` `_broadcastPool`「to everyone」，≤ 4 Hz） | 首领 / 隐藏回合，按**场**，≤ 4 Hz |
+| **实时领袖伤害** | `b.pool`（`shared/protocol.js:1070`） | `acked[fieldId]` = 那一场累计计入的领袖伤害（`server/match/match/bossRounds.js:448` `_broadcastPool`「to everyone」，≤ 4 Hz） | 首领 / 隐藏回合，按**场**，≤ 4 Hz |
 | 共享池血量 / 队伍 LP | 同一条 `b.pool` | `hp` / `max` / `teamLp` | 同上 |
 
 所以「总伤看板」是一个**今天就能发**的包：订阅 `m.result` 排个序就够了。
@@ -2456,7 +2456,7 @@ export function mount(ctx) {
   （`server/match/fields.js:61` / `:873`，`Match.js` 把它累进 `ps.stats.unitStats`），结算帧里**只有**由它选出来的
   一个 **mvp id**（`server/match/results.js:154` `mvp: mvpOf(ps, lineup)`）—— `m.result` 的每个玩家条目里
   **没有** `unitStats`。
-* **唯一带 `dmg` 元组的 S2C 是 `b.ev`**（`shared/protocol.js:788`，元组种类 `EV.DMG` 在同文件 `:823`），
+* **唯一带 `dmg` 元组的 S2C 是 `b.ev`**（`shared/protocol.js:1079`，元组种类 `EV.DMG` 在同文件 `:1116`），
   而那一行自己的注释写着 `server-run combat streaming (legacy / SP_COMBAT=server only)`。
 * **默认（客户端跑战斗）时那些元组不进 `net`。** 权威客户端的战斗在本机跑，`b.snap` / `b.ev` 走
   `public/js/battle/runner.js:282` 的 `emit` —— 那是 runner **自己的** listener map（`public/js/screens/game.js:601` 用
