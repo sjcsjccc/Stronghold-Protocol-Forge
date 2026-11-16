@@ -17,12 +17,13 @@ const PREP_PHASES = new Set([PHASE.PREP, PHASE.SP_DRAFT, PHASE.ROUND_START, PHAS
 /**
  * Which screen family a phase belongs to.
  * @param {string} phase
- * @returns {'loading'|'briefing'|'draft'|'boot'|'prep'|'combat'|'settle'|'result'}
+ * @returns {'loading'|'briefing'|'draft'|'diy'|'boot'|'prep'|'combat'|'settle'|'result'}
  */
 export function phaseMode(phase) {
   if (!phase) return 'loading';
   if (phase === PHASE.INFO_CHECK) return 'briefing';
   if (phase === PHASE.BAND_DRAFT) return 'draft';
+  if (phase === PHASE.CUSTOM_CHECK) return 'diy';
   if (phase === PHASE.BATTLE_CHECK) return 'boot';
   if (phase === PHASE.RESULT) return 'result';
   if (phase === PHASE.SETTLE) return 'settle';
@@ -41,6 +42,33 @@ export const isCombatPhase = (phase) => COMBAT_PHASES.has(phase);
  */
 export const showDeadPill = (alive, phase) => !alive && !COMBAT_PHASES.has(phase) && phase !== PHASE.SETTLE;
 export const isBossPhase = (phase) => phase === PHASE.FINAL_ASSAULT || phase === PHASE.HIDDEN_CORE;
+
+/** Pregame enter steps except 协议启动. No list → the two covenant steps. @param {any} config */
+export function pregameSteps(config) {
+  const steps = config?.timers?.enterSteps;
+  if (!Array.isArray(steps) || !steps.length) return ['INFO_CHECK', 'BAND_CHECK'];
+  return steps.map((s) => s && s.step).filter((s) => s && s !== 'BATTLE_CHECK');
+}
+
+/** How many pregame steps the header counts (规程 3, 盟约 2). @param {any} config */
+export function pregameStepCount(config) {
+  return pregameSteps(config).length || 2;
+}
+
+/**
+ * 1-based index of a pregame step. BAND_DRAFT is the table's BAND_CHECK.
+ * @param {any} config
+ * @param {string} step
+ */
+export function pregameStepIndex(config, step) {
+  const key = step === 'BAND_DRAFT' ? 'BAND_CHECK' : step;
+  const steps = pregameSteps(config);
+  const i = steps.indexOf(key);
+  if (i >= 0) return i + 1;
+  if (key === 'INFO_CHECK') return 1;
+  if (key === 'BAND_CHECK') return 2;
+  return steps.length || 2;
+}
 
 /**
  * Banner shown when a phase starts: { title, sub?, tone } or null.
@@ -62,13 +90,14 @@ export function phaseBanner(phase, pub, { alive = true, spectator = false } = {}
       return { title: t('第 {r} 回合', { r }), micro: `ROUND ${String(r).padStart(2, '0')}`, tone: 'mint',
         sub: spectator || alive === false ? t('观战中') : t('资金已到账') };
     }
-    case PHASE.SP_DRAFT: return { title: t('机变阶段'), micro: 'CONTINGENCY', tone: 'gold', sub: t('依次选择机变') };
+    case PHASE.SP_DRAFT:
+    case PHASE.COMBAT: return null;
     case PHASE.PREP:
-      // [local-patch 2026-10-22] 业主 2026-10-20：超限的 Boss 轮在**休整期**就要提示，让玩家提前调整阵容。
+      // [local-patch 2026-10-22] 业主 2026-10-20：超限的 Boss 轮在**休整期**就要提示，让玩家提前调整阵容
+      // （0.4.0 起普通局的休整期横幅让位规程 HUD，超限局没有规程 HUD，这个预告只保留给超限局）。
       if (!!pub?.isInfinite && r >= 20 && r % 5 === 0) return { title: t('休整期'), micro: `ROUND ${String(r).padStart(2, '0')} // BOSS NEXT`, tone: 'red',
         sub: spectator || alive === false ? t('观战中') : t('本回合为领袖轮：打完它开启词条抉择') };
-      return { title: t('休整期'), micro: `ROUND ${String(r).padStart(2, '0')} // REST`, tone: 'mint', sub: t('部署干员，准备迎敌') };
-    case PHASE.COMBAT: return { title: t('作战开始'), micro: 'COMBAT', tone: 'orange', sub: t('各自行动阶段') };
+      return null;
     case PHASE.UNITE: {
       const names = new Map(sortedPlayers(pub).map((p) => [p.playerId, p.name || t('博士')]));
       const helpers = Array.isArray(pub?.unite?.helpers) ? pub.unite.helpers.map((id) => names.get(id)).filter(Boolean) : [];
@@ -79,6 +108,22 @@ export function phaseBanner(phase, pub, { alive = true, spectator = false } = {}
     case PHASE.SETTLE: return null;
     default: return null;
   }
+}
+
+/**
+ * Stable identity for one eligible shared-draft turn. `draftToken` is local to the mounted match screen and changes
+ * when a distinct SP_DRAFT instance opens; the pick count distinguishes sequential turns even if the same seat turns
+ * up again. Solo is cued too (decision 7 of 2026-10-22, docs/history/0.3.2.md; the owner kept it on 2026-11-14 when
+ * PR #946 dropped it); personal 教鞭 choices have no turn cue. `solo` stays in the options for the callers.
+ * @param {any} pub m.public
+ * @param {any} sp normalizeSp(pub.sp)
+ * @param {{ myId?: string|null, solo?: boolean, alive?: boolean, spectator?: boolean, personal?: boolean, draftToken?: string|number }} [o]
+ * @returns {string|null}
+ */
+export function spTurnCueKey(pub, sp, { myId = null, solo = false, alive = true, spectator = false, personal = false, draftToken = '' } = {}) {
+  if (pub?.phase !== PHASE.SP_DRAFT || !sp || !alive || spectator || personal || typeof myId !== 'string' || !myId
+    || sp.turnPid !== myId || sp.pickOf?.has?.(myId)) return null;
+  return JSON.stringify([draftToken, pub.round ?? null, sp.family ?? null, sp.pickedCount ?? sp.pickOf?.size ?? 0, myId]);
 }
 
 // ---- the round's result box and 战斗结束 sound (GitHub #235; PR #112 by @Convey123) ------------------------------------
@@ -258,6 +303,11 @@ export function phaseTotalSeconds(pub, config, myId = null, spPriv = null) {
   const num = (v) => (Number.isFinite(v) && v > 0 ? v : null);
   switch (pub.phase) {
     case PHASE.INFO_CHECK: return num(timers.infoCheck) ?? 25;
+    case PHASE.CUSTOM_CHECK: {
+      const steps = Array.isArray(timers.enterSteps) ? timers.enterSteps : [];
+      const step = steps.find((s) => s && s.step === 'CUSTOM_CHECK');
+      return num(step?.time) ?? 30;
+    }
     // one countdown: the current turn's (m.public.draft.turnSeconds = Match.BAND_TURN_SECONDS; user playtest #4 item 4)
     case PHASE.BAND_DRAFT: return num(pub.draft?.turnSeconds) ?? num(timers.bandTurn) ?? 30;
     case PHASE.BATTLE_CHECK: return num(timers.battleCheck) ?? 3;
